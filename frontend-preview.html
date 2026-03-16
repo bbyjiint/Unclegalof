@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>โต๊ะลพบุรี Frontend Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="frontend-preview.css">
+</head>
+<body>
+  <header class="header">
+    <div class="hlogo">
+      <div class="ico">🪑</div>
+      <div>
+        <h1>โต๊ะลพบุรี</h1>
+        <p>Frontend preview for UI/UX and backend planning</p>
+      </div>
+    </div>
+    <div class="top-tags">
+      <span class="tag active">Front Page</span>
+      <span class="tag">No Storage</span>
+      <span class="tag">No Backend</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card intro-card">
+      <h2>Frontend-only preview</h2>
+      <p>หน้านี้ตัดส่วนระบบหลังบ้านออกแล้ว เหลือเฉพาะหน้า front page สำหรับดู layout, flow, interaction และคุยต่อเรื่อง backend / middleware ได้ง่ายขึ้น</p>
+      <div class="intro-points">
+        <span>ไม่มี `localStorage`</span>
+        <span>ไม่มี owner / inventory / repair</span>
+        <span>ไม่มี import / export / PIN</span>
+        <span>ไม่มี API search</span>
+      </div>
+    </section>
+
+    <section class="mnav">
+      <button type="button" aria-label="previous month">‹</button>
+      <h2>มีนาคม 2569</h2>
+      <button type="button" aria-label="next month">›</button>
+    </section>
+
+    <section class="stats2">
+      <div class="stat">
+        <label>ยอดขายตัวอย่าง</label>
+        <div class="val" id="s-total">฿0</div>
+      </div>
+      <div class="stat gold">
+        <label>จำนวนรายการตัวอย่าง</label>
+        <div class="val" id="s-count">0</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>➕ Front Page Form</h3>
+
+      <div class="frow">
+        <div class="fg">
+          <label>วันที่ขาย</label>
+          <input type="date" id="f-date">
+        </div>
+        <div class="fg">
+          <label>เลขออเดอร์</label>
+          <input type="text" id="f-oid" readonly>
+        </div>
+      </div>
+
+      <div class="frow">
+        <div class="fg">
+          <label>ประเภทสินค้า</label>
+          <select id="f-type">
+            <option value="">-- เลือกประเภท --</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>จำนวน (ชุด)</label>
+          <input type="number" id="f-qty" min="1" value="1">
+        </div>
+      </div>
+
+      <div class="frow">
+        <div class="fg">
+          <label>ราคาขาย (บาท)</label>
+          <input type="number" id="f-price" placeholder="เลือกสินค้าเพื่อดูราคาแนะนำ">
+          <div id="price-hint" class="subhint hidden"></div>
+        </div>
+        <div class="fg">
+          <label>สถานะชำระเงิน</label>
+          <select id="f-pay">
+            <option value="paid">ชำระแล้ว</option>
+            <option value="pending">ค้างชำระ</option>
+            <option value="deposit">มัดจำแล้ว</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="frow">
+        <div class="fg">
+          <label>โปรโมชั่น / ส่วนลด</label>
+          <select id="f-promo">
+            <option value="">-- ไม่มีส่วนลด --</option>
+          </select>
+        </div>
+        <div class="fg" id="discount-box">
+          <label>ส่วนลดโปรโมชั่น (บาท)</label>
+          <input type="number" id="f-discount" min="0" value="0">
+        </div>
+      </div>
+
+      <div class="manual-box">
+        <label class="check-row">
+          <input type="checkbox" id="f-manual-disc-toggle">
+          <span>ลดราคาเพิ่มเติมโดยแอดมิน</span>
+        </label>
+        <div id="manual-disc-fields" class="manual-fields hidden">
+          <div class="frow">
+            <div class="fg">
+              <label>จำนวนที่ลด (บาท)</label>
+              <input type="number" id="f-manual-disc" min="0" value="0">
+            </div>
+            <div class="fg">
+              <label>เหตุผล</label>
+              <input type="text" id="f-manual-reason" placeholder="เช่น ปิดการขาย, ลูกค้าประจำ">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="net-price-box" class="net-box hidden">
+        <div class="net-row">
+          <div class="net-meta">
+            <span>ราคาปกติ <b id="np-original">฿0</b></span>
+            <span id="np-promo-part" class="hidden">- โปร <b id="np-disc">฿0</b></span>
+            <span id="np-manual-part" class="hidden">- Admin ลด <b id="np-manual-disc">฿0</b></span>
+          </div>
+          <div class="net-total">= <span id="np-net">฿0</span></div>
+        </div>
+      </div>
+
+      <div class="dtoggle">
+        <label>วิธีรับสินค้า</label>
+        <div class="dopts">
+          <button type="button" class="dopt sel" id="dopt-self">🏭 รับที่โกดัง</button>
+          <button type="button" class="dopt" id="dopt-del">🚚 ส่งถึงบ้าน</button>
+        </div>
+      </div>
+
+      <div class="delbox" id="delbox">
+        <div class="delbox-title">📍 ข้อมูลการจัดส่ง</div>
+        <div class="frow">
+          <div class="fg">
+            <label>ระยะทางจากโกดัง (กม.)</label>
+            <input type="number" id="f-km" min="0" placeholder="เช่น 18">
+          </div>
+          <div class="fg">
+            <label>โซนที่คำนวณได้</label>
+            <input type="text" id="f-zone" readonly placeholder="กรอกระยะทางเพื่อคำนวณ">
+          </div>
+        </div>
+        <div id="zone-result" class="zone-result"></div>
+        <div class="frow single">
+          <div class="fg">
+            <label>ชื่อลูกค้า / ที่อยู่ / หมายเหตุ</label>
+            <textarea id="f-addr" placeholder="ชื่อ เบอร์ ที่อยู่ รายละเอียดการส่ง"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="wfeebox">
+        <div class="wfee-lbl" id="wfee-lbl">💰 ค่าแรง ไอซ์ (ยกที่โกดัง)</div>
+        <div id="wfee-body">
+          <div class="wfrow">
+            <span class="wname">💪 ไอซ์ ค่ายก/ชุด</span>
+            <input type="number" id="f-ice" min="0" placeholder="เลือกสินค้าก่อน">
+            <span class="unit">บาท/ชุด</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="frow single">
+        <div class="fg">
+          <label>หมายเหตุเพิ่มเติม</label>
+          <textarea id="f-note" placeholder="หมายเหตุอื่นๆ สำหรับดู flow หน้าแบบฟอร์ม"></textarea>
+        </div>
+      </div>
+
+      <div id="grand-total-box" class="grand-total-box">
+        <div class="gt-label">ยอดรวมที่คิดกับลูกค้า</div>
+        <div id="gt-rows" class="gt-rows"></div>
+        <div class="gt-total-row">
+          <span>รวมทั้งหมด</span>
+          <span id="gt-total">—</span>
+        </div>
+      </div>
+
+      <div class="card-actions">
+        <button type="button" class="btnok" id="save-demo-btn">💾 เพิ่มลงรายการตัวอย่าง</button>
+        <span class="helper-text">ปุ่มนี้เป็น demo เท่านั้น ไม่มีการบันทึกจริง</span>
+      </div>
+    </section>
+
+    <section>
+      <div class="slist-title">📋 รายการตัวอย่างบนหน้า front (<span id="s-lcount">0</span> รายการ)</div>
+      <div id="sale-list"></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast-el"></div>
+
+  <script>
+    const PRODUCT_TYPES = [
+      "โต๊ะลอฟ 70",
+      "โต๊ะ 70 แกรนิต",
+      "โต๊ะ 85 ทรงยู",
+      "โต๊ะ 1.5 ม.",
+      "โต๊ะ 1.8 ม.",
+      "โต๊ะเปล่า",
+      "เก้าอี้เทา",
+      "เก้าอี้ขาว/ดำ"
+    ];
+
+    const PRICE_TABLE = {
+      "โต๊ะลอฟ 70": { self: 2500, delivery: 3000 },
+      "โต๊ะ 70 แกรนิต": { self: 2800, delivery: 3300 },
+      "โต๊ะ 85 ทรงยู": { self: 2800, delivery: 3300 },
+      "โต๊ะ 1.5 ม.": { self: 6000, delivery: 6500 },
+      "โต๊ะ 1.8 ม.": { self: 7000, delivery: 7500 },
+      "โต๊ะเปล่า": { self: null, delivery: null },
+      "เก้าอี้เทา": { self: null, delivery: null },
+      "เก้าอี้ขาว/ดำ": { self: null, delivery: null }
+    };
+
+    const ICE_RATES = {
+      "โต๊ะลอฟ 70": 100,
+      "โต๊ะ 70 แกรนิต": 100,
+      "โต๊ะ 85 ทรงยู": 100,
+      "โต๊ะ 1.5 ม.": 400,
+      "โต๊ะ 1.8 ม.": 400,
+      "โต๊ะเปล่า": 20,
+      "เก้าอี้เทา": 20,
+      "เก้าอี้ขาว/ดำ": 20
+    };
+
+    const PROMOS = [
+      { id: "newyear", name: "โปรปีใหม่", amount: 300 },
+      { id: "bundle", name: "โปรจับคู่", amount: 500 },
+      { id: "showroom", name: "โปรหน้าร้าน", amount: 200 }
+    ];
+
+    const ZONES = [
+      { label: "โซน 1 (ฟรี)", min: 1, max: 10, fee: 0 },
+      { label: "โซน 2", min: 11, max: 15, fee: 100 },
+      { label: "โซน 3", min: 16, max: 29, fee: 200 },
+      { label: "โซน 4", min: 30, max: 39, fee: 300 },
+      { label: "โซน 5", min: 40, max: 49, fee: 400 },
+      { label: "โซน 6", min: 50, max: 59, fee: 500 },
+      { label: "โซน 7", min: 60, max: 79, fee: 600 },
+      { label: "โซน 8", min: 80, max: 99, fee: 700 },
+      { label: "โซน 9", min: 100, max: 109, fee: 1000 },
+      { label: "โซน 10", min: 110, max: 119, fee: 1100 },
+      { label: "โซน 11", min: 120, max: 129, fee: 1200 },
+      { label: "โซน 12", min: 130, max: 139, fee: 1300 },
+      { label: "โซน 13", min: 140, max: 149, fee: 1400 },
+      { label: "โซน 14", min: 150, max: 159, fee: 1500 },
+      { label: "โซน 15", min: 160, max: 169, fee: 1600 },
+      { label: "โซน 16", min: 170, max: 179, fee: 1700 },
+      { label: "โซน 17", min: 180, max: 189, fee: 1800 },
+      { label: "โซน 18", min: 190, max: 199, fee: 1900 },
+      { label: "โซน 19", min: 200, max: 299, fee: 2000 },
+      { label: "โซน 20", min: 300, max: 9999, fee: 2500 }
+    ];
+
+    const previewOrders = [
+      {
+        id: 1,
+        oid: "#001",
+        date: "2026-03-10",
+        type: "โต๊ะลอฟ 70",
+        qty: 1,
+        price: 2500,
+        netPrice: 2200,
+        delivery: "self",
+        pay: "paid",
+        zoneName: "",
+        wFee: 100,
+        addr: ""
+      },
+      {
+        id: 2,
+        oid: "#002",
+        date: "2026-03-12",
+        type: "โต๊ะ 1.5 ม.",
+        qty: 1,
+        price: 6500,
+        netPrice: 6500,
+        delivery: "delivery",
+        pay: "deposit",
+        zoneName: "โซน 3",
+        wFee: 200,
+        addr: "อ.เมือง ลพบุรี"
+      }
+    ];
+
+    let deliveryMode = "self";
+    let nextOrderNumber = 3;
+
+    const $ = (id) => document.getElementById(id);
+    const fmt = (value) => Math.round(value || 0).toLocaleString("th-TH");
+    const money = (value) => "฿" + fmt(value);
+
+    function toast(message) {
+      const el = $("toast-el");
+      el.textContent = message;
+      el.classList.add("show");
+      window.clearTimeout(window.__toastTimer);
+      window.__toastTimer = window.setTimeout(() => el.classList.remove("show"), 2200);
+    }
+
+    function getZone(km) {
+      if (!km || km <= 0) return null;
+      return ZONES.find((zone) => km >= zone.min && km <= zone.max) || null;
+    }
+
+    function refreshOrderId() {
+      $("f-oid").value = "#" + String(nextOrderNumber).padStart(3, "0");
+    }
+
+    function populateProducts() {
+      $("f-type").innerHTML = '<option value="">-- เลือกประเภท --</option>' +
+        PRODUCT_TYPES.map((type) => `<option value="${type}">${type}</option>`).join("");
+    }
+
+    function populatePromos() {
+      $("f-promo").innerHTML = '<option value="">-- ไม่มีส่วนลด --</option>' +
+        PROMOS.map((promo) => `<option value="${promo.id}" data-amount="${promo.amount}">${promo.name} (ลด ${money(promo.amount)})</option>`).join("");
+    }
+
+    function setDeliveryMode(mode) {
+      deliveryMode = mode;
+      $("dopt-self").classList.toggle("sel", mode === "self");
+      $("dopt-del").classList.toggle("sel", mode === "delivery");
+      $("delbox").classList.toggle("show", mode === "delivery");
+
+      if (mode === "delivery") {
+        $("wfee-lbl").textContent = "💰 ค่าแรง ปอ (ส่งถึงบ้าน)";
+        $("wfee-body").innerHTML = `
+          <div class="wfrow">
+            <span class="wname">🚚 ค่าจัดส่ง</span>
+            <input type="number" id="f-po-fee" readonly placeholder="คำนวณจากโซน">
+            <span class="unit">บาท/งาน</span>
+          </div>
+        `;
+      } else {
+        $("wfee-lbl").textContent = "💰 ค่าแรง ไอซ์ (ยกที่โกดัง)";
+        $("wfee-body").innerHTML = `
+          <div class="wfrow">
+            <span class="wname">💪 ไอซ์ ค่ายก/ชุด</span>
+            <input type="number" id="f-ice" min="0" placeholder="เลือกสินค้าก่อน">
+            <span class="unit">บาท/ชุด</span>
+          </div>
+        `;
+        $("f-ice").addEventListener("input", updateGrandTotal);
+        onTypeChange();
+      }
+
+      calcZone();
+      updateGrandTotal();
+    }
+
+    function onPromoChange() {
+      const selected = $("f-promo").selectedOptions[0];
+      const discount = selected ? Number(selected.dataset.amount || 0) : 0;
+      $("f-discount").value = discount;
+      updateNetPrice();
+    }
+
+    function toggleManualDiscount() {
+      const enabled = $("f-manual-disc-toggle").checked;
+      $("manual-disc-fields").classList.toggle("hidden", !enabled);
+      if (!enabled) {
+        $("f-manual-disc").value = 0;
+        $("f-manual-reason").value = "";
+      }
+      updateNetPrice();
+    }
+
+    function onTypeChange() {
+      const type = $("f-type").value;
+      const row = PRICE_TABLE[type];
+      const priceHint = $("price-hint");
+
+      if (!type || !row || row.self === null) {
+        priceHint.classList.add("hidden");
+        priceHint.textContent = "";
+        updateNetPrice();
+        return;
+      }
+
+      const suggested = deliveryMode === "delivery" ? row.delivery : row.self;
+      $("f-price").value = suggested;
+      priceHint.classList.remove("hidden");
+      priceHint.innerHTML = deliveryMode === "delivery"
+        ? `รับเอง ${money(row.self)} | ส่งบ้าน <b>${money(row.delivery)}</b>`
+        : `<b>รับเอง ${money(row.self)}</b> | ส่งบ้าน ${money(row.delivery)}`;
+
+      if (deliveryMode === "self") {
+        $("f-ice").value = ICE_RATES[type] || 0;
+      }
+
+      updateNetPrice();
+    }
+
+    function calcZone() {
+      const zoneResult = $("zone-result");
+      const zoneField = $("f-zone");
+      const km = Number($("f-km").value || 0);
+      const zone = getZone(km);
+
+      if (deliveryMode !== "delivery") {
+        zoneField.value = "";
+        zoneResult.className = "zone-result";
+        zoneResult.innerHTML = "";
+        return;
+      }
+
+      if (!zone) {
+        zoneField.value = "";
+        zoneResult.className = "zone-result";
+        zoneResult.innerHTML = "";
+        const feeField = $("f-po-fee");
+        if (feeField) feeField.value = "";
+        updateGrandTotal();
+        return;
+      }
+
+      zoneField.value = zone.label;
+      zoneResult.className = "zone-result show " + (zone.fee === 0 ? "free" : "zone");
+      zoneResult.innerHTML = `
+        <span>${zone.label} - ${km} กม.</span>
+        <span>${zone.fee === 0 ? "ฟรี" : money(zone.fee)}</span>
+      `;
+
+      const feeField = $("f-po-fee");
+      if (feeField) feeField.value = zone.fee;
+      updateGrandTotal();
+    }
+
+    function updateNetPrice() {
+      const price = Number($("f-price").value || 0);
+      const promoDiscount = Number($("f-discount").value || 0);
+      const manualDiscount = $("f-manual-disc-toggle").checked ? Number($("f-manual-disc").value || 0) : 0;
+      const totalDiscount = promoDiscount + manualDiscount;
+
+      $("np-original").textContent = money(price);
+      $("np-disc").textContent = money(promoDiscount);
+      $("np-manual-disc").textContent = money(manualDiscount);
+      $("np-net").textContent = money(Math.max(0, price - totalDiscount));
+
+      $("np-promo-part").classList.toggle("hidden", promoDiscount <= 0);
+      $("np-manual-part").classList.toggle("hidden", manualDiscount <= 0);
+      $("net-price-box").classList.toggle("hidden", !(price > 0 && totalDiscount > 0));
+
+      if (deliveryMode === "self") {
+        updateIceLabel();
+      }
+      updateGrandTotal();
+    }
+
+    function updateIceLabel() {
+      if (deliveryMode !== "self") return;
+      const qty = Number($("f-qty").value || 1);
+      const perUnit = Number($("f-ice").value || 0);
+      $("wfee-lbl").textContent = perUnit > 0
+        ? `💰 ค่าแรง ไอซ์ - ${perUnit} x ${qty} ชุด = ${money(perUnit * qty)}`
+        : "💰 ค่าแรง ไอซ์ (ยกที่โกดัง)";
+    }
+
+    function updateGrandTotal() {
+      const qty = Number($("f-qty").value || 1);
+      const price = Number($("f-price").value || 0);
+      const promoDiscount = Number($("f-discount").value || 0);
+      const manualDiscount = $("f-manual-disc-toggle").checked ? Number($("f-manual-disc").value || 0) : 0;
+      const unitNet = Math.max(0, price - promoDiscount - manualDiscount);
+      const productTotal = unitNet * qty;
+      let workerFee = 0;
+
+      if (deliveryMode === "delivery") {
+        workerFee = Number(($("f-po-fee") && $("f-po-fee").value) || 0);
+      } else {
+        workerFee = Number(($("f-ice") && $("f-ice").value) || 0) * qty;
+        updateIceLabel();
+      }
+
+      const total = productTotal + workerFee;
+      const rows = [];
+
+      if (price > 0) {
+        rows.push(`
+          <div class="gt-row">
+            <span>ราคาสินค้า ${qty > 1 ? `(${qty} ชุด)` : ""}</span>
+            <span>${money(productTotal)}</span>
+          </div>
+        `);
+      }
+
+      if (workerFee > 0) {
+        rows.push(`
+          <div class="gt-row">
+            <span>${deliveryMode === "delivery" ? "ค่าจัดส่ง" : "ค่าแรงยก"}</span>
+            <span>${money(workerFee)}</span>
+          </div>
+        `);
+      }
+
+      $("gt-rows").innerHTML = rows.length ? rows.join("") : '<div class="gt-empty">กรอกข้อมูลเพื่อดูยอดรวม</div>';
+      $("gt-total").textContent = price > 0 ? money(total) : "—";
+    }
+
+    function renderOrders() {
+      const list = $("sale-list");
+      const total = previewOrders.reduce((sum, order) => sum + ((order.netPrice || order.price) * order.qty), 0);
+
+      $("s-total").textContent = money(total);
+      $("s-count").textContent = previewOrders.length;
+      $("s-lcount").textContent = previewOrders.length;
+
+      if (!previewOrders.length) {
+        list.innerHTML = '<div class="empty"><div class="ico">📦</div><p>ยังไม่มีรายการตัวอย่าง</p></div>';
+        return;
+      }
+
+      list.innerHTML = [...previewOrders].reverse().map((order) => `
+        <div class="sitem ${order.delivery}">
+          <div class="sitem-l">
+            <div class="soid">${order.oid}</div>
+            <div class="sdetail">
+              <span>${order.type}</span>
+              <span>x${order.qty}</span>
+              <span class="bdg ${order.delivery === "delivery" ? "del" : "pick"}">${order.delivery === "delivery" ? "🚚 ส่งบ้าน" : "🏭 รับเอง"}</span>
+              <span class="bdg ${order.pay === "paid" ? "paid" : order.pay === "deposit" ? "dep" : "pend"}">${order.pay}</span>
+              ${order.zoneName ? `<span class="bdg zx">${order.zoneName}</span>` : ""}
+              ${order.addr ? `<span class="truncate">📝 ${order.addr}</span>` : ""}
+            </div>
+          </div>
+          <div class="sitem-r">
+            <div class="sprice">${money((order.netPrice || order.price) * order.qty)}</div>
+            <div class="sdate">${order.date}</div>
+          </div>
+          <button type="button" class="bdel" data-id="${order.id}">✕</button>
+        </div>
+      `).join("");
+
+      list.querySelectorAll(".bdel").forEach((button) => {
+        button.addEventListener("click", () => {
+          const id = Number(button.dataset.id);
+          const index = previewOrders.findIndex((order) => order.id === id);
+          if (index >= 0) {
+            previewOrders.splice(index, 1);
+            renderOrders();
+          }
+        });
+      });
+    }
+
+    function resetForm() {
+      $("f-date").value = new Date().toISOString().slice(0, 10);
+      $("f-type").value = "";
+      $("f-qty").value = 1;
+      $("f-price").value = "";
+      $("f-pay").value = "paid";
+      $("f-promo").value = "";
+      $("f-discount").value = 0;
+      $("f-manual-disc-toggle").checked = false;
+      $("f-manual-disc").value = 0;
+      $("f-manual-reason").value = "";
+      $("f-km").value = "";
+      $("f-zone").value = "";
+      $("f-addr").value = "";
+      $("f-note").value = "";
+      $("manual-disc-fields").classList.add("hidden");
+      $("price-hint").classList.add("hidden");
+      $("zone-result").className = "zone-result";
+      $("zone-result").innerHTML = "";
+      setDeliveryMode("self");
+      refreshOrderId();
+      updateNetPrice();
+    }
+
+    function addDemoOrder() {
+      const type = $("f-type").value;
+      const qty = Number($("f-qty").value || 1);
+      const price = Number($("f-price").value || 0);
+      const pay = $("f-pay").value;
+      const promoDiscount = Number($("f-discount").value || 0);
+      const manualDiscount = $("f-manual-disc-toggle").checked ? Number($("f-manual-disc").value || 0) : 0;
+      const totalDiscount = promoDiscount + manualDiscount;
+      const netPrice = Math.max(0, price - totalDiscount);
+      const km = Number($("f-km").value || 0);
+      const zone = getZone(km);
+      const workerFee = deliveryMode === "delivery"
+        ? Number(($("f-po-fee") && $("f-po-fee").value) || 0)
+        : Number(($("f-ice") && $("f-ice").value) || 0) * qty;
+
+      if (!type) {
+        toast("กรุณาเลือกประเภทสินค้า");
+        return;
+      }
+      if (price <= 0) {
+        toast("กรุณาใส่ราคาขาย");
+        return;
+      }
+      if ($("f-manual-disc-toggle").checked && manualDiscount > 0 && !$("f-manual-reason").value.trim()) {
+        toast("กรุณาใส่เหตุผลของการลดราคา");
+        return;
+      }
+      if (deliveryMode === "delivery" && !zone) {
+        toast("กรุณาใส่ระยะทางเพื่อคำนวณโซน");
+        return;
+      }
+
+      previewOrders.push({
+        id: Date.now(),
+        oid: $("f-oid").value,
+        date: $("f-date").value,
+        type,
+        qty,
+        price,
+        netPrice,
+        delivery: deliveryMode,
+        pay,
+        zoneName: zone ? zone.label : "",
+        wFee: workerFee,
+        addr: $("f-addr").value.trim()
+      });
+
+      nextOrderNumber += 1;
+      renderOrders();
+      resetForm();
+      toast("เพิ่มลงรายการตัวอย่างแล้ว");
+    }
+
+    function bindEvents() {
+      $("dopt-self").addEventListener("click", () => setDeliveryMode("self"));
+      $("dopt-del").addEventListener("click", () => setDeliveryMode("delivery"));
+      $("f-type").addEventListener("change", onTypeChange);
+      $("f-qty").addEventListener("input", updateGrandTotal);
+      $("f-price").addEventListener("input", updateNetPrice);
+      $("f-promo").addEventListener("change", onPromoChange);
+      $("f-discount").addEventListener("input", updateNetPrice);
+      $("f-manual-disc-toggle").addEventListener("change", toggleManualDiscount);
+      $("f-manual-disc").addEventListener("input", updateNetPrice);
+      $("f-km").addEventListener("input", calcZone);
+      $("save-demo-btn").addEventListener("click", addDemoOrder);
+    }
+
+    function init() {
+      populateProducts();
+      populatePromos();
+      bindEvents();
+      resetForm();
+      renderOrders();
+    }
+
+    init();
+  </script>
+</body>
+</html>

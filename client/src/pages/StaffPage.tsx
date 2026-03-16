@@ -1,0 +1,336 @@
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { formatMoney, getZoneByKm, DELIVERY_ZONES } from "../data/constants";
+import { api } from "../lib/api";
+import type { DeliveryMode, PayStatus, Promotion, Sale } from "../types";
+
+type StaffFormState = {
+  date: string;
+  type: string;
+  qty: number;
+  price: number | "";
+  pay: PayStatus;
+  promoId: string;
+  discount: number;
+  manualDisc: number;
+  manualReason: string;
+  delivery: DeliveryMode;
+  km: number | "";
+  addr: string;
+  note: string;
+};
+
+type Product = {
+  id: string;
+  name: string;
+  onsitePrice: number;
+  deliveryPrice: number;
+};
+
+const initialForm = (today: string): StaffFormState => ({
+  date: today,
+  type: "",
+  qty: 1,
+  price: "",
+  pay: "paid",
+  promoId: "",
+  discount: 0,
+  manualDisc: 0,
+  manualReason: "",
+  delivery: "self",
+  km: "",
+  addr: "",
+  note: ""
+});
+
+export default function StaffPage() {
+  const today = new Date().toISOString().slice(0, 10);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [form, setForm] = useState<StaffFormState>(initialForm(today));
+
+  // Create price table and ICE rates from products
+  const PRICE_TABLE = useMemo(() => {
+    const table: Record<string, { self: number | null; delivery: number | null }> = {};
+    products.forEach(product => {
+      table[product.name] = {
+        self: product.onsitePrice || null,
+        delivery: product.deliveryPrice || null,
+      };
+    });
+    return table;
+  }, [products]);
+
+  const ICE_RATES: Record<string, number> = {
+    "ลอฟขาเอียง": 100,
+    "ลอฟขาตรง": 100,
+    "แกรนิต": 100,
+    "ทรงยู": 100,
+    "1.5 เมตร": 400,
+    "1.8 เมตร": 400,
+  };
+
+  async function loadPage(): Promise<void> {
+    setLoading(true);
+    try {
+      const now = new Date();
+      const [promoData, salesData, productsData] = await Promise.all([
+        api.promotions(),
+        api.sales(now.getMonth() + 1, now.getFullYear()),
+        api.getProducts(),
+      ]);
+      setPromotions(promoData.items || []);
+      setSales(salesData.items || []);
+      setProducts(productsData.items || []);
+    } catch (error) {
+      console.error("Failed to load page:", error);
+      alert(error instanceof Error ? error.message : "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadPage();
+  }, []);
+
+  const activePromo = promotions.find((promo) => String(promo.id) === String(form.promoId));
+  const unitDiscount = Number(form.discount || 0) + Number(form.manualDisc || 0);
+  const unitNet = Math.max(0, Number(form.price || 0) - unitDiscount);
+  const zone = form.delivery === "delivery" ? getZoneByKm(Number(form.km || 0)) : null;
+  const workerFee = form.delivery === "delivery" ? zone?.fee || 0 : (ICE_RATES[form.type] || 0) * Number(form.qty || 1);
+  const grandTotal = unitNet * Number(form.qty || 1) + workerFee;
+
+  useEffect(() => {
+    if (!form.type) return;
+    const row = PRICE_TABLE[form.type];
+    if (!row || row.self == null) return;
+    setForm((current) => ({
+      ...current,
+      price: current.delivery === "delivery" ? row.delivery ?? "" : row.self ?? ""
+    }));
+  }, [form.type, form.delivery, PRICE_TABLE]);
+
+  useEffect(() => {
+    setForm((current) => ({
+      ...current,
+      discount: activePromo ? activePromo.amount : 0
+    }));
+  }, [activePromo]);
+
+  const stats = useMemo(() => {
+    const total = sales.reduce((sum, sale) => sum + Number(sale.grandTotal || 0), 0);
+    return { total, count: sales.length };
+  }, [sales]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    try {
+      await api.createSale({
+        date: form.date,
+        type: form.type,
+        qty: Number(form.qty),
+        price: Number(form.price),
+        pay: form.pay,
+        discount: Number(form.discount),
+        manualDisc: Number(form.manualDisc),
+        manualReason: form.manualReason,
+        delivery: form.delivery,
+        km: form.delivery === "delivery" ? Number(form.km || 0) : null,
+        zoneName: zone?.label || null,
+        addr: form.addr,
+        note: form.note,
+        wFee: workerFee,
+        wType: form.delivery === "delivery" ? "po" : "ice",
+        promoId: form.promoId ? Number(form.promoId) : null
+      });
+      setForm(initialForm(today));
+      await loadPage();
+    } catch (error) {
+      console.error("Failed to create sale:", error);
+      alert(error instanceof Error ? error.message : "Failed to create sale");
+    }
+  }
+
+  async function handleDeleteSale(id: number): Promise<void> {
+    try {
+      await api.deleteSale(id);
+      await loadPage();
+    } catch (error) {
+      console.error("Failed to delete sale:", error);
+      alert(error instanceof Error ? error.message : "Failed to delete sale");
+    }
+  }
+
+  return (
+    <main className="wrap">
+      <section className="stats2">
+        <div className="stat">
+          <label>ยอดขายเดือนนี้</label>
+          <div className="val">{formatMoney(stats.total)}</div>
+        </div>
+        <div className="stat gold">
+          <label>จำนวนรายการ</label>
+          <div className="val">{stats.count}</div>
+        </div>
+      </section>
+
+      <form className="card" onSubmit={handleSubmit}>
+        <h3>➕ บันทึกการขาย</h3>
+        <div className="frow">
+          <div className="fg">
+            <label>วันที่ขาย</label>
+            <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
+          </div>
+          <div className="fg">
+            <label>ประเภทสินค้า</label>
+            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} required>
+              <option value="">-- เลือกประเภท --</option>
+              {products.map((product) => <option key={product.id} value={product.name}>{product.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="frow">
+          <div className="fg">
+            <label>จำนวน (ชุด)</label>
+            <input type="number" min="1" value={form.qty} onChange={(e) => setForm({ ...form, qty: Number(e.target.value) || 1 })} required />
+          </div>
+          <div className="fg">
+            <label>ราคาขาย (บาท)</label>
+            <input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value === "" ? "" : Number(e.target.value) })} required />
+          </div>
+        </div>
+
+        <div className="frow">
+          <div className="fg">
+            <label>สถานะชำระเงิน</label>
+            <select value={form.pay} onChange={(e) => setForm({ ...form, pay: e.target.value as PayStatus })}>
+              <option value="paid">ชำระแล้ว</option>
+              <option value="pending">ค้างชำระ</option>
+              <option value="deposit">มัดจำแล้ว</option>
+            </select>
+          </div>
+          <div className="fg">
+            <label>โปรโมชั่น</label>
+            <select value={form.promoId} onChange={(e) => setForm({ ...form, promoId: e.target.value })}>
+              <option value="">— ไม่มีส่วนลด —</option>
+              {promotions.filter((promo) => promo.active).map((promo) => (
+                <option key={promo.id} value={promo.id}>
+                  {promo.name} (ลด {formatMoney(promo.amount)})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="frow">
+          <div className="fg">
+            <label>ส่วนลดโปรโมชั่น</label>
+            <input type="number" value={form.discount} onChange={(e) => setForm({ ...form, discount: Number(e.target.value) || 0 })} />
+          </div>
+          <div className="fg">
+            <label>ลดเพิ่มโดยแอดมิน</label>
+            <input type="number" value={form.manualDisc} onChange={(e) => setForm({ ...form, manualDisc: Number(e.target.value) || 0 })} />
+          </div>
+        </div>
+
+        <div className="frow s1">
+          <div className="fg">
+            <label>เหตุผลลดเพิ่ม</label>
+            <input type="text" value={form.manualReason} onChange={(e) => setForm({ ...form, manualReason: e.target.value })} />
+          </div>
+        </div>
+
+        <div className="dtoggle">
+          <label>วิธีรับสินค้า</label>
+          <div className="dopts">
+            <button type="button" className={`dopt${form.delivery === "self" ? " sel" : ""}`} onClick={() => setForm({ ...form, delivery: "self" })}>
+              🏭 รับที่โกดัง
+            </button>
+            <button type="button" className={`dopt${form.delivery === "delivery" ? " sel" : ""}`} onClick={() => setForm({ ...form, delivery: "delivery" })}>
+              🚚 ส่งถึงบ้าน
+            </button>
+          </div>
+        </div>
+
+        {form.delivery === "delivery" && (
+          <div className="delbox show">
+            <div className="delbox-title">📍 ข้อมูลการจัดส่ง</div>
+            <div className="frow">
+              <div className="fg">
+                <label>ระยะทาง (กม.)</label>
+                <input type="number" value={form.km} onChange={(e) => setForm({ ...form, km: e.target.value === "" ? "" : Number(e.target.value) })} />
+              </div>
+              <div className="fg">
+                <label>ชื่อลูกค้า / หมายเหตุ</label>
+                <input type="text" value={form.addr} onChange={(e) => setForm({ ...form, addr: e.target.value })} />
+              </div>
+            </div>
+            {zone && (
+              <div className={`zone-result show ${zone.fee === 0 ? "free" : "zone"}`}>
+                <span>{zone.label}</span>
+                <span>{formatMoney(zone.fee)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="frow s1">
+          <div className="fg">
+            <label>หมายเหตุเพิ่มเติม</label>
+            <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+          </div>
+        </div>
+
+        <div className="card" style={{ background: "linear-gradient(135deg,var(--green),var(--green-light))", color: "white" }}>
+          <h3 style={{ color: "white" }}>💰 ยอดรวม</h3>
+          <div className="crow">
+            <div className="ctxt">ราคาสินค้าสุทธิ</div>
+            <div className="crow-r">{formatMoney(unitNet * Number(form.qty || 1))}</div>
+          </div>
+          <div className="crow">
+            <div className="ctxt">{form.delivery === "delivery" ? "ค่าจัดส่ง" : "ค่าแรงยก"}</div>
+            <div className="crow-r">{formatMoney(workerFee)}</div>
+          </div>
+          <div className="crow">
+            <div className="ctxt">รวมทั้งหมด</div>
+            <div className="crow-r">{formatMoney(grandTotal)}</div>
+          </div>
+        </div>
+
+        <button className="btnok" type="submit" disabled={!form.type || !form.price}>💾 บันทึกการขาย</button>
+      </form>
+
+      <section>
+        <div className="slist-title">📋 รายการขายเดือนนี้</div>
+        {loading ? (
+          <div className="empty"><p>กำลังโหลด...</p></div>
+        ) : sales.length === 0 ? (
+          <div className="empty"><div className="ico">📦</div><p>ยังไม่มีรายการ</p></div>
+        ) : (
+          sales.map((sale) => (
+            <div key={sale.id} className={`sitem ${sale.delivery}`}>
+              <div className="sitem-l">
+                <div className="soid">{sale.orderNumber}</div>
+                <div className="sdetail">
+                  <span>{sale.type}</span>
+                  <span>x{sale.qty}</span>
+                  <span className={`bdg ${sale.delivery === "delivery" ? "del" : "pick"}`}>{sale.delivery === "delivery" ? "🚚 ส่งบ้าน" : "🏭 รับเอง"}</span>
+                  <span className={`bdg ${sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "dep" : "pend"}`}>
+                    {sale.payStatus}
+                  </span>
+                </div>
+              </div>
+              <div className="sitem-r">
+                <div className="sprice">{formatMoney(sale.grandTotal)}</div>
+              </div>
+              <button className="bdel" type="button" onClick={() => handleDeleteSale(sale.id)}>✕</button>
+            </div>
+          ))
+        )}
+      </section>
+    </main>
+  );
+}

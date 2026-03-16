@@ -1,0 +1,111 @@
+import { Router } from "express";
+import { z } from "zod";
+import { prisma } from "../lib/prisma.js";
+import { validate } from "../middleware/validate.middleware.js";
+import { authenticate } from "../middleware/auth.middleware.js";
+import { requireBusinessAccess, requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
+import { saleRecordToSale, promotionToFrontend } from "../lib/adapters.js";
+
+const router = Router();
+
+const queryMonthYearSchema = z.object({
+  month: z.coerce.number().int().min(1).max(12),
+  year: z.coerce.number().int().min(2000).max(2100),
+});
+
+// GET /api/dashboard/owner - Owner dashboard data
+router.get(
+  "/owner",
+  authenticate,
+  requireBusinessAccess,
+  requireOwnerOrAdmin,
+  validate(queryMonthYearSchema, "query"),
+  async (req, res, next) => {
+    try {
+      const { month, year } = req.query;
+      const start = new Date(Date.UTC(year, month - 1, 1));
+      const end = new Date(Date.UTC(year, month, 1));
+      
+      // Get sales for the month
+      const saleRecords = await prisma.saleRecord.findMany({
+        where: {
+          businessId: req.businessId,
+          createdAt: {
+            gte: start,
+            lt: end,
+          },
+        },
+        include: {
+          promotion: true,
+          deskItem: true,
+          commissions: {
+            include: {
+              worker: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      fullName: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      
+      // Get promotions
+      const promotions = await prisma.promotion.findMany({
+        where: {
+          businessId: req.businessId,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      
+      // Transform sales to frontend format
+      const sales = saleRecords.map((sale, index) => saleRecordToSale(sale, index));
+      
+      // Transform promotions to frontend format
+      const promotionsFrontend = promotions.map((promo, index) => promotionToFrontend(promo, index));
+      
+      // Calculate summary
+      const income = sales.reduce((sum, sale) => sum + sale.grandTotal, 0);
+      
+      // Calculate worker costs from commissions
+      const workerCost = saleRecords.reduce((sum, sale) => {
+        const saleCommissions = sale.commissions?.reduce((cSum, comm) => cSum + comm.amount, 0) || 0;
+        return sum + saleCommissions;
+      }, 0);
+      
+      // Get payroll records for the month
+      const payrollRecords = await prisma.payrollRecord.findMany({
+        where: {
+          businessId: req.businessId,
+          year,
+          month,
+        },
+      });
+      
+      const baseCosts = payrollRecords.reduce((sum, pr) => sum + pr.baseSalary + (pr.bonus || 0) - (pr.deduction || 0), 0);
+      
+      // Note: Inventory cost calculation would need inventory models
+      const inventoryCost = 0; // TODO: Calculate from inventory when models are added
+      
+      const cost = inventoryCost + workerCost + baseCosts;
+      const profit = income - cost;
+      const margin = income > 0 ? (profit / income) * 100 : 0;
+      
+      res.json({
+        summary: { income, cost, profit, margin },
+        promotions: promotionsFrontend,
+        sales,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+export default router;
