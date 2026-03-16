@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireBusinessAccess, requireInventory } from "../middleware/authorize.middleware.js";
+import { requireInventory } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 
 const router = Router();
@@ -38,15 +38,10 @@ const paramsIdSchema = z.object({
 router.get(
   "/summary",
   authenticate,
-  requireBusinessAccess,
   requireInventory,
   async (req, res, next) => {
     try {
-      // Get all desk items for this business
       const deskItems = await prisma.deskItem.findMany({
-        where: {
-          businessId: req.businessId,
-        },
         orderBy: { name: "asc" },
       });
       
@@ -72,7 +67,6 @@ router.get(
 router.get(
   "/lots",
   authenticate,
-  requireBusinessAccess,
   requireInventory,
   async (req, res, next) => {
     try {
@@ -92,7 +86,6 @@ router.get(
 router.post(
   "/movements/stock-in",
   authenticate,
-  requireBusinessAccess,
   requireInventory,
   writeRateLimiter,
   validate(frontendStockInSchema),
@@ -100,10 +93,9 @@ router.post(
     try {
       const payload = req.body;
       
-      // Find desk item by name (type) for this business
+      // Find desk item by name (type)
       const deskItem = await prisma.deskItem.findFirst({
         where: {
-          businessId: req.businessId,
           name: payload.type,
         },
       });
@@ -129,7 +121,6 @@ router.post(
 router.post(
   "/lots/batch",
   authenticate,
-  requireBusinessAccess,
   requireInventory,
   writeRateLimiter,
   validate(batchLotsSchema),
@@ -137,15 +128,10 @@ router.post(
     try {
       const payload = req.body;
       
-      // Verify all deskItems belong to this business
+      // Verify all deskItems exist
       for (const item of payload.items) {
         const deskItem = await prisma.deskItem.findUnique({
-          where: {
-            businessId_id: {
-              businessId: req.businessId,
-              id: item.deskItemId,
-            },
-          },
+          where: { id: item.deskItemId },
         });
         
         if (!deskItem) {
@@ -169,7 +155,6 @@ router.post(
 router.delete(
   "/lots/:id",
   authenticate,
-  requireBusinessAccess,
   requireInventory,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),

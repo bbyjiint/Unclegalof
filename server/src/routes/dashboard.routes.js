@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireBusinessAccess, requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
+import { requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
 import { saleRecordToSale, promotionToFrontend } from "../lib/adapters.js";
 
 const router = Router();
@@ -17,7 +17,6 @@ const queryMonthYearSchema = z.object({
 router.get(
   "/owner",
   authenticate,
-  requireBusinessAccess,
   requireOwnerOrAdmin,
   validate(queryMonthYearSchema, "query"),
   async (req, res, next) => {
@@ -29,8 +28,7 @@ router.get(
       // Get sales for the month
       const saleRecords = await prisma.saleRecord.findMany({
         where: {
-          businessId: req.businessId,
-          createdAt: {
+          saleDate: {
             gte: start,
             lt: end,
           },
@@ -38,29 +36,13 @@ router.get(
         include: {
           promotion: true,
           deskItem: true,
-          commissions: {
-            include: {
-              worker: {
-                include: {
-                  user: {
-                    select: {
-                      id: true,
-                      fullName: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
+          commissions: true,
         },
         orderBy: { createdAt: "desc" },
       });
       
       // Get promotions
       const promotions = await prisma.promotion.findMany({
-        where: {
-          businessId: req.businessId,
-        },
         orderBy: { createdAt: "desc" },
       });
       
@@ -82,7 +64,6 @@ router.get(
       // Get payroll records for the month
       const payrollRecords = await prisma.payrollRecord.findMany({
         where: {
-          businessId: req.businessId,
           year,
           month,
         },

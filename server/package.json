@@ -8,8 +8,7 @@
     "build": "node -e \"console.log('server build step not required')\"",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio",
-    "test-data": "node scripts/insert-test-data.js"
+    "prisma:studio": "prisma studio"
   },
   "dependencies": {
     "@prisma/client": "^6.5.0",

@@ -1,20 +1,34 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import AppShell from "./components/AppShell";
-import HomePage from "./pages/HomePage";
+import ProtectedRoute from "./components/ProtectedRoute";
+import PublicOnlyRoute from "./components/PublicOnlyRoute";
 import InventoryPage from "./pages/InventoryPage";
 import OwnerPage from "./pages/OwnerPage";
 import RepairPage from "./pages/RepairPage";
 import StaffPage from "./pages/StaffPage";
+import LoginPage from "./pages/LoginPage";
+import SignupPage from "./pages/SignupPage";
 
 export default function App() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/staff" element={<StaffPage />} />
-        <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/repair" element={<RepairPage />} />
-        <Route path="/owner" element={<OwnerPage />} />
+        <Route element={<PublicOnlyRoute />}>
+          <Route path="/" element={<LoginPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+        </Route>
+
+        <Route element={<ProtectedRoute />}>
+          <Route path="/staff" element={<StaffPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/repair" element={<RepairPage />} />
+        </Route>
+
+        <Route element={<ProtectedRoute allowedRoles={["OWNER", "ADMIN"]} />}>
+          <Route path="/owner" element={<OwnerPage />} />
+        </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>

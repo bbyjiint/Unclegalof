@@ -1,4 +1,7 @@
 import type {
+  AuthResponse,
+  CurrentUserResponse,
+  AuthUser,
   InventorySummaryResponse,
   OwnerDashboard,
   PromotionsResponse,
@@ -7,7 +10,7 @@ import type {
   SalesResponse
 } from "../types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4001/api";
 
 type RequestOptions = RequestInit & {
   headers?: HeadersInit;
@@ -51,7 +54,28 @@ type CreateSalePayload = {
   note: string;
   wFee: number;
   wType: "po" | "ice";
-  promoId: number | null;
+  promoId: string | null;
+};
+
+type UploadSalePaymentSlipPayload = {
+  imageData: string;
+};
+
+type UpdateSaleStatusPayload = {
+  status: "paid" | "pending" | "deposit";
+};
+
+type RegisterPayload = {
+  fullName: string;
+  email: string;
+  password: string;
+  phone?: string;
+  role: "OWNER" | "STAFF";
+};
+
+type LoginPayload = {
+  email: string;
+  password: string;
 };
 
 // Auth token management
@@ -59,6 +83,12 @@ export const auth = {
   getToken: () => localStorage.getItem("authToken"),
   setToken: (token: string) => localStorage.setItem("authToken", token),
   clearToken: () => localStorage.removeItem("authToken"),
+  getUser: (): AuthUser | null => {
+    const raw = localStorage.getItem("authUser");
+    return raw ? JSON.parse(raw) as AuthUser : null;
+  },
+  setUser: (user: AuthUser) => localStorage.setItem("authUser", JSON.stringify(user)),
+  clearUser: () => localStorage.removeItem("authUser"),
 };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -84,7 +114,15 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 export const api = {
   // Auth
   setAuthToken: (token: string) => auth.setToken(token),
-  clearAuthToken: () => auth.clearToken(),
+  clearAuthToken: () => {
+    auth.clearToken();
+    auth.clearUser();
+  },
+  login: (payload: LoginPayload) =>
+    request<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
+  register: (payload: RegisterPayload) =>
+    request<AuthResponse>("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
+  me: () => request<CurrentUserResponse>("/auth/me"),
   
   // Catalog
   getProducts: () => request<{ items: Array<{ id: string; name: string; onsitePrice: number; deliveryPrice: number }> }>("/catalog/products"),
@@ -93,17 +131,17 @@ export const api = {
   promotions: () => request<PromotionsResponse>("/promotions"),
   createPromotion: (payload: CreatePromotionPayload) =>
     request("/promotions", { method: "POST", body: JSON.stringify(payload) }),
-  togglePromotion: (id: number, active: boolean) =>
+  togglePromotion: (id: string, active: boolean) =>
     request(`/promotions/${id}`, { method: "PATCH", body: JSON.stringify({ active }) }),
-  deletePromotion: (id: number) => request(`/promotions/${id}`, { method: "DELETE" }),
+  deletePromotion: (id: string) => request(`/promotions/${id}`, { method: "DELETE" }),
   
   // Repairs
   repairs: () => request<RepairsResponse>("/repairs"),
   createRepair: (payload: CreateRepairPayload) =>
     request("/repairs", { method: "POST", body: JSON.stringify(payload) }),
-  updateRepairStatus: (id: number, status: RepairStatus) =>
+  updateRepairStatus: (id: string, status: RepairStatus) =>
     request(`/repairs/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
-  deleteRepair: (id: number) => request(`/repairs/${id}`, { method: "DELETE" }),
+  deleteRepair: (id: string) => request(`/repairs/${id}`, { method: "DELETE" }),
   
   // Inventory
   inventorySummary: () => request<InventorySummaryResponse>("/inventory/summary"),
@@ -113,7 +151,11 @@ export const api = {
   // Sales
   sales: (month: number, year: number) => request<SalesResponse>(`/sales?month=${month}&year=${year}`),
   createSale: (payload: CreateSalePayload) => request("/sales", { method: "POST", body: JSON.stringify(payload) }),
-  deleteSale: (id: number) => request(`/sales/${id}`, { method: "DELETE" }),
+  uploadSalePaymentSlip: (id: string, payload: UploadSalePaymentSlipPayload) =>
+    request(`/sales/${id}/payment-slip`, { method: "PATCH", body: JSON.stringify(payload) }),
+  updateSaleStatus: (id: string, payload: UpdateSaleStatusPayload) =>
+    request(`/sales/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteSale: (id: string) => request(`/sales/${id}`, { method: "DELETE" }),
   
   // Dashboard
   ownerDashboard: (month: number, year: number) =>

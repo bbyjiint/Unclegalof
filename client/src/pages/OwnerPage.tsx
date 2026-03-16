@@ -11,13 +11,19 @@ type PromotionFormState = {
 export default function OwnerPage() {
   const now = new Date();
   const [dashboard, setDashboard] = useState<OwnerDashboard | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [month] = useState<number>(now.getMonth() + 1);
   const [year] = useState<number>(now.getFullYear());
   const [promoForm, setPromoForm] = useState<PromotionFormState>({ name: "", amount: "" });
 
   async function loadPage(): Promise<void> {
-    const data = await api.ownerDashboard(month, year);
-    setDashboard(data);
+    try {
+      setError(null);
+      const data = await api.ownerDashboard(month, year);
+      setDashboard(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load dashboard");
+    }
   }
 
   useEffect(() => {
@@ -35,18 +41,22 @@ export default function OwnerPage() {
     await loadPage();
   }
 
-  async function togglePromo(id: number, active: boolean): Promise<void> {
+  async function togglePromo(id: string, active: boolean): Promise<void> {
     await api.togglePromotion(id, active);
     await loadPage();
   }
 
-  async function deletePromo(id: number): Promise<void> {
+  async function deletePromo(id: string): Promise<void> {
     await api.deletePromotion(id);
     await loadPage();
   }
 
   if (!dashboard) {
-    return <main className="owrap"><div className="empty"><p>กำลังโหลด...</p></div></main>;
+    return (
+      <main className="owrap">
+        <div className="empty"><p>{error || "กำลังโหลด..."}</p></div>
+      </main>
+    );
   }
 
   return (

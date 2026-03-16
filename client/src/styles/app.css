@@ -336,6 +336,47 @@ button[type="submit"] {
   flex: 1;
 }
 
+.sale-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.sale-action-btn,
+.sale-slip-link {
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.sale-action-btn {
+  border: none;
+  background: var(--green-pale);
+  color: var(--green);
+}
+
+.sale-action-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.sale-slip-link {
+  background: #eef5ff;
+  color: var(--blue);
+}
+
+.sale-paid-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--gray);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .soid,
 .sprice,
 .crow-r,

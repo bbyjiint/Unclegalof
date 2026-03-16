@@ -75,7 +75,7 @@ export default function RepairPage() {
     }
   }
 
-  async function updateStatus(id: number, status: RepairStatus): Promise<void> {
+  async function updateStatus(id: string, status: RepairStatus): Promise<void> {
     try {
       await api.updateRepairStatus(id, status);
       await loadRepairs();
@@ -85,7 +85,7 @@ export default function RepairPage() {
     }
   }
 
-  async function deleteRepair(id: number): Promise<void> {
+  async function deleteRepair(id: string): Promise<void> {
     try {
       await api.deleteRepair(id);
       await loadRepairs();

@@ -7,58 +7,52 @@
  */
 export function saleRecordToSale(saleRecord, sequence = null) {
   const deskItemName = saleRecord.deskItem?.name || saleRecord.deskType || "";
-  
-  // Generate orderNumber from sequence or use first 8 chars of UUID
-  const orderNumber = sequence !== null 
-    ? `#${String(sequence + 1).padStart(3, "0")}`
-    : `#${saleRecord.id.substring(0, 8).toUpperCase()}`;
-  
-  // Calculate grandTotal (amount includes everything in current schema)
-  // If we need to separate, we'd need to store more fields
-  const grandTotal = saleRecord.amount;
-  
+
+  const orderNumber =
+    saleRecord.orderNumber ||
+    (sequence !== null ? `SO-${String(sequence + 1).padStart(4, "0")}` : `SO-${saleRecord.id.substring(0, 8).toUpperCase()}`);
+
   return {
-    id: sequence !== null ? sequence + 1 : parseInt(saleRecord.id.replace(/-/g, "").substring(0, 8), 16) % 1000000,
+    id: saleRecord.id,
     orderNumber,
     type: deskItemName,
-    qty: 1, // Default since schema doesn't have qty
-    price: saleRecord.amount,
-    grandTotal,
+    qty: saleRecord.quantity ?? 1,
+    price: saleRecord.unitPrice ?? saleRecord.amount,
+    grandTotal: saleRecord.amount,
     payStatus: saleRecord.status === "paid" ? "paid" : saleRecord.status === "pending" ? "pending" : "deposit",
     delivery: saleRecord.deliveryType === "delivery" ? "delivery" : "self",
-    date: saleRecord.createdAt?.toISOString().split("T")[0] || new Date().toISOString().split("T")[0],
+    date: (saleRecord.saleDate || saleRecord.createdAt)?.toISOString().split("T")[0] || new Date().toISOString().split("T")[0],
     note: saleRecord.remarks || null,
+    paymentSlipImage: saleRecord.paymentSlipImage || null,
+    paidAt: saleRecord.paidAt?.toISOString() || null,
   };
 }
 
 /**
  * Convert frontend Sale payload to database SaleRecord format
  */
-export function salePayloadToSaleRecord(payload, businessId, deskItemId) {
-  // Calculate amount from price, qty, discounts, and worker fee
+export function salePayloadToSaleRecord(payload, deskItemId) {
   const unitDiscount = (payload.discount || 0) + (payload.manualDisc || 0);
   const unitNet = Math.max(0, (payload.price || 0) - unitDiscount);
   const grandTotal = unitNet * (payload.qty || 1) + (payload.wFee || 0);
-  
-  // Handle promoId - it might be a number (index) or UUID string
-  let appliedPromotion = null;
-  if (payload.promoId) {
-    // If it's a number, we'll need to look it up by index
-    // If it's a UUID string, use it directly
-    appliedPromotion = typeof payload.promoId === "string" && payload.promoId.includes("-") 
-      ? payload.promoId 
-      : null; // Will be looked up by index in route
-  }
-  
+
   return {
-    businessId,
+    saleDate: new Date(payload.date),
     deskType: deskItemId,
+    quantity: payload.qty || 1,
+    unitPrice: payload.price || 0,
+    promoDiscount: payload.discount || 0,
+    manualDiscount: payload.manualDisc || 0,
+    manualDiscountReason: payload.manualReason || null,
     status: payload.pay || "pending",
-    appliedPromotion,
+    appliedPromotion: payload.promoId || null,
     amount: grandTotal,
     deliveryType: payload.delivery || "self",
     deliveryRange: payload.delivery === "delivery" && payload.km ? getDeliveryRangeFromKm(payload.km) : null,
-    remarks: payload.note || payload.manualReason || null,
+    workerFee: payload.wFee || 0,
+    workerFeeType: payload.wType || null,
+    customerName: payload.addr || null,
+    remarks: payload.note || null,
   };
 }
 
@@ -114,21 +108,11 @@ function getDeliveryRangeFromKm(km) {
  * Convert database Promotion to frontend Promotion format
  */
 export function promotionToFrontend(promotion, index = null) {
-  // Try to extract amount from name if it's in format "Name (100)" or "Name - 100"
-  let amount = 0;
-  const amountMatch = promotion.name.match(/[(\-]\s*(\d+)\s*[)\-]/);
-  if (amountMatch) {
-    amount = parseInt(amountMatch[1], 10);
-  }
-  
-  // Check if name contains "inactive" or similar to determine active status
-  const active = !promotion.name.toLowerCase().includes("inactive");
-  
   return {
-    id: index !== null ? index + 1 : parseInt(promotion.id.replace(/-/g, "").substring(0, 8), 16) % 1000000,
-    name: promotion.name.replace(/\s*[(\-]\s*\d+\s*[)\-]\s*/g, "").replace(/\s*\(inactive\)/gi, ""), // Remove amount from name
-    amount,
-    active,
+    id: promotion.id,
+    name: promotion.name,
+    amount: promotion.amount ?? 0,
+    active: promotion.isActive ?? true,
     createdAt: promotion.createdAt?.toISOString(),
     updatedAt: promotion.updatedAt?.toISOString(),
   };
@@ -141,36 +125,32 @@ export function repairRecordToRepairItem(repairRecord, index = null) {
   const deskItemName = repairRecord.deskItem?.name || repairRecord.deskItemId || "";
   
   return {
-    id: index !== null ? index + 1 : parseInt(repairRecord.id.replace(/-/g, "").substring(0, 8), 16) % 1000000,
+    id: repairRecord.id,
     type: deskItemName,
-    qty: 1, // Default since schema doesn't have qty
-    size: "", // Schema doesn't have size - stored in description
-    color: "", // Schema doesn't have color - stored in description
+    qty: repairRecord.quantity ?? 1,
+    size: repairRecord.size || "",
+    color: repairRecord.color || "",
     reason: repairRecord.description,
-    kind: "repair", // Schema doesn't have kind - default to repair
-    status: "open", // Schema doesn't have status - default to open
-    date: repairRecord.createdAt?.toISOString().split("T")[0] || new Date().toISOString().split("T")[0],
+    kind: repairRecord.kind === "claim" ? "claim" : "repair",
+    status: repairRecord.status === "inprogress" || repairRecord.status === "done" ? repairRecord.status : "open",
+    date: (repairRecord.reportDate || repairRecord.createdAt)?.toISOString().split("T")[0] || new Date().toISOString().split("T")[0],
   };
 }
 
 /**
  * Convert frontend Repair payload to database RepairRecord format
  */
-export function repairPayloadToRepairRecord(payload, businessId, deskItemId, reportedBy) {
-  // Combine size, color, reason into description
-  const descriptionParts = [];
-  if (payload.size) descriptionParts.push(`ขนาด: ${payload.size}`);
-  if (payload.color) descriptionParts.push(`สี: ${payload.color}`);
-  if (payload.reason) descriptionParts.push(`สาเหตุ: ${payload.reason}`);
-  if (payload.kind) descriptionParts.push(`ประเภท: ${payload.kind}`);
-  
-  const description = descriptionParts.join(" | ") || payload.reason || "";
-  
+export function repairPayloadToRepairRecord(payload, deskItemId, reportedBy) {
   return {
-    businessId,
     deskItemId,
     reportedBy,
-    description,
-    amount: 0, // Default amount
+    reportDate: new Date(payload.date),
+    quantity: payload.qty || 1,
+    size: payload.size || null,
+    color: payload.color || null,
+    description: payload.reason || "",
+    kind: payload.kind || "repair",
+    status: "open",
+    amount: 0,
   };
 }

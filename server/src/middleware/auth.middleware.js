@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma.js";
 /**
  * Authentication middleware - verifies JWT token and attaches user to request
  * Requires: Authorization header with "Bearer <token>"
- * Attaches: req.user, req.businessUser, req.businessId, req.role
+ * Attaches: req.user, req.role
  */
 export async function authenticate(req, res, next) {
   try {
@@ -26,7 +26,9 @@ export async function authenticate(req, res, next) {
         id: true,
         email: true,
         fullName: true,
+        phone: true,
         isActive: true,
+        role: true,
       },
     });
 
@@ -34,39 +36,9 @@ export async function authenticate(req, res, next) {
       return res.status(401).json({ error: "User not found or inactive" });
     }
 
-    // Verify BusinessUser membership still exists and is active
-    const businessUser = await prisma.businessUser.findUnique({
-      where: { id: decoded.businessUserId },
-      select: {
-        id: true,
-        businessId: true,
-        userId: true,
-        role: true,
-      },
-    });
-
-    if (!businessUser || businessUser.userId !== decoded.userId) {
-      return res.status(401).json({ error: "Invalid membership" });
-    }
-
-    // Verify business still exists and is active
-    const business = await prisma.business.findUnique({
-      where: { id: businessUser.businessId },
-      select: {
-        id: true,
-        isActive: true,
-      },
-    });
-
-    if (!business || !business.isActive) {
-      return res.status(401).json({ error: "Business not found or inactive" });
-    }
-
     // Attach user info to request
     req.user = user;
-    req.businessUser = businessUser;
-    req.businessId = businessUser.businessId;
-    req.role = businessUser.role;
+    req.role = user.role;
 
     next();
   } catch (error) {
@@ -97,28 +69,12 @@ export async function optionalAuthenticate(req, res, next) {
     const decoded = verifyToken(token);
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, email: true, fullName: true, isActive: true },
+      select: { id: true, email: true, fullName: true, phone: true, isActive: true, role: true },
     });
 
     if (user && user.isActive) {
-      const businessUser = await prisma.businessUser.findUnique({
-        where: { id: decoded.businessUserId },
-        select: { id: true, businessId: true, userId: true, role: true },
-      });
-
-      if (businessUser && businessUser.userId === decoded.userId) {
-        const business = await prisma.business.findUnique({
-          where: { id: businessUser.businessId },
-          select: { id: true, isActive: true },
-        });
-
-        if (business && business.isActive) {
-          req.user = user;
-          req.businessUser = businessUser;
-          req.businessId = businessUser.businessId;
-          req.role = businessUser.role;
-        }
-      }
+      req.user = user;
+      req.role = user.role;
     }
 
     next();

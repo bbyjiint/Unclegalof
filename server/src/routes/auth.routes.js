@@ -10,27 +10,75 @@ import { UserRole } from "@prisma/client";
 
 const router = Router();
 
+const defaultDeskItems = [
+  { name: "ลอฟขาเอียง", onsitePrice: 2500, deliveryPrice: 3000 },
+  { name: "ลอฟขาตรง", onsitePrice: 2500, deliveryPrice: 3000 },
+  { name: "แกรนิต", onsitePrice: 2800, deliveryPrice: 3300 },
+  { name: "ทรงยู", onsitePrice: 2800, deliveryPrice: 3300 },
+  { name: "1.5 เมตร", onsitePrice: 6000, deliveryPrice: 6500 },
+  { name: "1.8 เมตร", onsitePrice: 7000, deliveryPrice: 7500 },
+];
+
+const defaultDeliveryFees = [
+  { range: 1, cost: 0 },
+  { range: 2, cost: 100 },
+  { range: 3, cost: 200 },
+  { range: 4, cost: 300 },
+  { range: 5, cost: 400 },
+  { range: 6, cost: 500 },
+  { range: 7, cost: 600 },
+  { range: 8, cost: 700 },
+  { range: 9, cost: 1000 },
+  { range: 10, cost: 1100 },
+  { range: 11, cost: 1200 },
+  { range: 12, cost: 1300 },
+  { range: 13, cost: 1400 },
+  { range: 14, cost: 1500 },
+  { range: 15, cost: 1600 },
+  { range: 16, cost: 1700 },
+  { range: 17, cost: 1800 },
+  { range: 18, cost: 1900 },
+  { range: 19, cost: 2000 },
+  { range: 20, cost: 2500 },
+];
+
 // Registration schema
 const registerSchema = z.object({
   fullName: z.string().min(1).max(100),
   email: z.string().email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
   phone: z.string().optional(),
-  businessId: z.string().uuid().optional(), // Optional: create new business or join existing
-  businessName: z.string().min(1).max(100).optional(), // Required if creating new business
-  role: z.nativeEnum(UserRole).default(UserRole.OWNER), // Default to OWNER for new businesses
+  role: z.enum([UserRole.OWNER, UserRole.STAFF]),
 });
 
 // Login schema
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-  businessId: z.string().uuid().optional(), // Optional: if user has multiple businesses
 });
+
+async function ensureDefaultData() {
+  const [deskItemCount, deliveryFeeCount] = await Promise.all([
+    prisma.deskItem.count(),
+    prisma.deliveryFee.count(),
+  ]);
+
+  if (deskItemCount === 0) {
+    await prisma.deskItem.createMany({
+      data: defaultDeskItems,
+    });
+  }
+
+  if (deliveryFeeCount === 0) {
+    await prisma.deliveryFee.createMany({
+      data: defaultDeliveryFees,
+    });
+  }
+}
 
 /**
  * POST /api/auth/register
- * Register a new user and optionally create/join a business
+ * Register a new user
  */
 router.post(
   "/register",
@@ -38,7 +86,7 @@ router.post(
   validate(registerSchema),
   async (req, res, next) => {
     try {
-      const { fullName, email, password, phone, businessId, businessName, role } = req.body;
+      const { fullName, email, password, phone, role } = req.body;
 
       // Check if user already exists
       const existingUser = await prisma.user.findUnique({
@@ -52,110 +100,34 @@ router.post(
       // Hash password
       const passwordHash = await hashPassword(password);
 
-      // Create user and business membership
-      let businessUserId;
-      let finalBusinessId = businessId;
-
-      if (businessId) {
-        // Join existing business
-        const business = await prisma.business.findUnique({
-          where: { id: businessId },
-        });
-
-        if (!business) {
-          return res.status(404).json({ error: "Business not found" });
-        }
-
-        // Create user
-        const user = await prisma.user.create({
-          data: {
-            fullName,
-            email,
-            passwordHash,
-            phone,
-          },
-        });
-
-        // Create business membership
-        const businessUser = await prisma.businessUser.create({
-          data: {
-            businessId,
-            userId: user.id,
-            role: role || UserRole.STAFF, // Default to STAFF when joining existing business
-          },
-        });
-
-        businessUserId = businessUser.id;
-        finalBusinessId = businessId;
-      } else if (businessName) {
-        // Create new business
-        const user = await prisma.user.create({
-          data: {
-            fullName,
-            email,
-            passwordHash,
-            phone,
-          },
-        });
-
-        // Create business
-        const business = await prisma.business.create({
-          data: {
-            name: businessName,
-            users: {
-              create: {
-                userId: user.id,
-                role: role || UserRole.OWNER, // Default to OWNER for new business
-              },
-            },
-          },
-          include: {
-            users: {
-              where: { userId: user.id },
-            },
-          },
-        });
-
-        businessUserId = business.users[0].id;
-        finalBusinessId = business.id;
-      } else {
-        return res.status(400).json({
-          error: "Either businessId or businessName must be provided",
-        });
-      }
-
-      // Get the business user with role
-      const businessUser = await prisma.businessUser.findUnique({
-        where: { id: businessUserId },
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              fullName: true,
-            },
-          },
+      const user = await prisma.user.create({
+        data: {
+          fullName,
+          email,
+          passwordHash,
+          phone,
+          role,
         },
       });
 
+      await ensureDefaultData();
+
       // Generate JWT token
       const token = generateToken({
-        userId: businessUser.user.id,
-        businessUserId: businessUser.id,
-        businessId: finalBusinessId,
-        role: businessUser.role,
-        email: businessUser.user.email,
+        userId: user.id,
+        role: user.role,
+        email: user.email,
       });
 
       res.status(201).json({
         message: "User registered successfully",
         token,
         user: {
-          id: businessUser.user.id,
-          email: businessUser.user.email,
-          fullName: businessUser.user.fullName,
-          businessId: finalBusinessId,
-          role: businessUser.role,
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          phone: user.phone,
+          role: user.role,
         },
       });
     } catch (error) {
@@ -174,7 +146,7 @@ router.post(
   validate(loginSchema),
   async (req, res, next) => {
     try {
-      const { email, password, businessId } = req.body;
+      const { email, password } = req.body;
 
       // Find user
       const user = await prisma.user.findUnique({
@@ -196,55 +168,10 @@ router.post(
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
-      // Find business membership(s)
-      const memberships = await prisma.businessUser.findMany({
-        where: {
-          userId: user.id,
-        },
-        include: {
-          business: {
-            select: {
-              id: true,
-              name: true,
-              isActive: true,
-            },
-          },
-        },
-      });
-
-      if (memberships.length === 0) {
-        return res.status(403).json({ error: "User has no business memberships" });
-      }
-
-      // Filter active businesses
-      const activeMemberships = memberships.filter((m) => m.business.isActive);
-
-      if (activeMemberships.length === 0) {
-        return res.status(403).json({ error: "No active business memberships" });
-      }
-
-      // If businessId specified, use that membership
-      let selectedMembership = activeMemberships[0];
-      if (businessId) {
-        const found = activeMemberships.find((m) => m.businessId === businessId);
-        if (!found) {
-          return res.status(403).json({
-            error: "User does not have access to this business",
-            availableBusinesses: activeMemberships.map((m) => ({
-              id: m.business.id,
-              name: m.business.name,
-            })),
-          });
-        }
-        selectedMembership = found;
-      }
-
       // Generate JWT token
       const token = generateToken({
         userId: user.id,
-        businessUserId: selectedMembership.id,
-        businessId: selectedMembership.businessId,
-        role: selectedMembership.role,
+        role: user.role,
         email: user.email,
       });
 
@@ -255,19 +182,9 @@ router.post(
           id: user.id,
           email: user.email,
           fullName: user.fullName,
-          businessId: selectedMembership.businessId,
-          businessName: selectedMembership.business.name,
-          role: selectedMembership.role,
+          phone: user.phone,
+          role: user.role,
         },
-        // If user has multiple businesses, return list
-        availableBusinesses:
-          activeMemberships.length > 1
-            ? activeMemberships.map((m) => ({
-                id: m.business.id,
-                name: m.business.name,
-                role: m.role,
-              }))
-            : undefined,
       });
     } catch (error) {
       next(error);
@@ -282,35 +199,24 @@ router.post(
  */
 router.get("/me", authenticate, async (req, res, next) => {
   try {
-    const businessUser = await prisma.businessUser.findUnique({
-      where: { id: req.businessUser.id },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            fullName: true,
-            phone: true,
-          },
-        },
-        business: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        role: true,
       },
     });
 
     res.json({
       user: {
-        id: businessUser.user.id,
-        email: businessUser.user.email,
-        fullName: businessUser.user.fullName,
-        phone: businessUser.user.phone,
-        businessId: businessUser.business.id,
-        businessName: businessUser.business.name,
-        role: businessUser.role,
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone,
+        role: user.role,
       },
     });
   } catch (error) {

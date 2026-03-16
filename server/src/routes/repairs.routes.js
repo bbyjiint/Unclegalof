@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireBusinessAccess, requireStaff } from "../middleware/authorize.middleware.js";
+import { requireStaff } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { repairRecordToRepairItem, repairPayloadToRepairRecord } from "../lib/adapters.js";
 
@@ -25,34 +25,20 @@ const updateRepairStatusSchema = z.object({
 });
 
 const paramsIdSchema = z.object({
-  id: z.coerce.number().int().positive(), // Frontend sends number IDs
+  id: z.string().uuid(),
 });
 
 // GET /api/repairs - Get all repair records
 router.get(
   "/",
   authenticate,
-  requireBusinessAccess,
   requireStaff,
   async (req, res, next) => {
     try {
       const repairRecords = await prisma.repairRecord.findMany({
-        where: {
-          businessId: req.businessId,
-        },
         include: {
           deskItem: true,
-          reporter: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  fullName: true,
-                  email: true,
-                },
-              },
-            },
-          },
+          reporter: true,
         },
         orderBy: { createdAt: "desc" },
       });
@@ -71,7 +57,6 @@ router.get(
 router.post(
   "/",
   authenticate,
-  requireBusinessAccess,
   requireStaff,
   writeRateLimiter,
   validate(frontendRepairSchema),
@@ -79,10 +64,9 @@ router.post(
     try {
       const payload = req.body;
       
-      // Find desk item by name (type) for this business
+      // Find desk item by name (type)
       const deskItem = await prisma.deskItem.findFirst({
         where: {
-          businessId: req.businessId,
           name: payload.type,
         },
       });
@@ -94,47 +78,23 @@ router.post(
       // Transform frontend payload to database format
       const repairRecordData = repairPayloadToRepairRecord(
         payload,
-        req.businessId,
         deskItem.id,
-        req.businessUser.id
+        req.user.id
       );
       
       const repairRecord = await prisma.repairRecord.create({
         data: repairRecordData,
         include: {
           deskItem: true,
-          reporter: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  fullName: true,
-                  email: true,
-                },
-              },
-            },
-          },
+          reporter: true,
         },
       });
       
       // Transform to frontend format
       const items = await prisma.repairRecord.findMany({
-        where: {
-          businessId: req.businessId,
-        },
         include: {
           deskItem: true,
-          reporter: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  fullName: true,
-                  email: true,
-                },
-              },
-            },
-          },
+          reporter: true,
         },
         orderBy: { createdAt: "desc" },
       });
@@ -153,7 +113,6 @@ router.post(
 router.patch(
   "/:id/status",
   authenticate,
-  requireBusinessAccess,
   requireStaff,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
@@ -163,33 +122,27 @@ router.patch(
       const { id } = req.params;
       const payload = req.body;
       
-      // Frontend sends numeric ID, find by index
-      const repairRecords = await prisma.repairRecord.findMany({
-        where: {
-          businessId: req.businessId,
-        },
-        orderBy: { createdAt: "desc" },
+      const repair = await prisma.repairRecord.findUnique({
+        where: { id },
       });
-      
-      const repair = repairRecords[id - 1]; // Frontend uses 1-based index
       
       if (!repair) {
         return res.status(404).json({ error: "Repair record not found" });
       }
-      
-      // Note: Status field doesn't exist in current schema
-      // For now, we'll update the description to include status
-      const updatedDescription = `${repair.description} | Status: ${payload.status}`;
-      
+
       const updated = await prisma.repairRecord.update({
-        where: { id: repair.id },
+        where: { id },
         data: {
-          description: updatedDescription,
+          status: payload.status,
+        },
+        include: {
+          deskItem: true,
+          reporter: true,
         },
       });
       
       // Transform to frontend format
-      const item = repairRecordToRepairItem(updated, id - 1);
+      const item = repairRecordToRepairItem(updated);
       
       res.json(item);
     } catch (error) {
@@ -202,7 +155,6 @@ router.patch(
 router.delete(
   "/:id",
   authenticate,
-  requireBusinessAccess,
   requireStaff,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
@@ -210,15 +162,9 @@ router.delete(
     try {
       const { id } = req.params;
       
-      // Frontend sends numeric ID, find by index
-      const repairRecords = await prisma.repairRecord.findMany({
-        where: {
-          businessId: req.businessId,
-        },
-        orderBy: { createdAt: "desc" },
+      const repair = await prisma.repairRecord.findUnique({
+        where: { id },
       });
-      
-      const repair = repairRecords[id - 1]; // Frontend uses 1-based index
       
       if (!repair) {
         return res.status(404).json({ error: "Repair record not found" });

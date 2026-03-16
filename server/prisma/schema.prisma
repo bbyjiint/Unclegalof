@@ -16,179 +16,136 @@ enum UserRole {
   DELIVERY
 }
 
-model Business {
-  id              String                 @id @default(uuid()) @db.Uuid
-  name            String
-  isActive        Boolean                @default(true)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  users           BusinessUser[]
-  deskItems       DeskItem[]
-  deliveryFees    DeliveryFee[]
-  promotions      Promotion[]
-  saleRecords     SaleRecord[]
-  repairRecords   RepairRecord[]
-  saleCommissions SaleRecordCommission[]
-  payrollRecords  PayrollRecord[]
-}
-
 model User {
-  id           String         @id @default(uuid()) @db.Uuid
-  fullName     String
-  email        String         @unique
-  passwordHash String
-  phone        String?
-  isActive     Boolean        @default(true)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  memberships  BusinessUser[]
-}
-
-model BusinessUser {
   id                    String                 @id @default(uuid()) @db.Uuid
-  businessId            String                 @db.Uuid
-  userId                String                 @db.Uuid
-  role                  UserRole
-  baseSalary            Int? // Default monthly salary for this worker
+  fullName              String
+  email                 String                 @unique
+  passwordHash          String
+  phone                 String?
+  role                  UserRole               @default(STAFF)
+  baseSalary            Int?
+  isActive              Boolean                @default(true)
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
-  business              Business               @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   repairRecordsReported RepairRecord[]
   saleCommissions       SaleRecordCommission[]
   payrollRecords        PayrollRecord[]
-
-  @@unique([businessId, userId])
-  @@index([businessId, role])
-  @@index([userId])
 }
 
 model DeskItem {
   id            String         @id @default(uuid()) @db.Uuid
-  businessId    String         @db.Uuid
-  name          String
+  name          String         @unique
   onsitePrice   Int
   deliveryPrice Int
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
-  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   saleRecords   SaleRecord[]
   repairRecords RepairRecord[]
-
-  @@unique([businessId, name])
-  @@unique([businessId, id])
-  @@index([businessId])
 }
 
 model DeliveryFee {
-  businessId  String       @db.Uuid
-  range       Int
+  range       Int          @id
   cost        Int
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
-  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   saleRecords SaleRecord[]
-
-  @@id([businessId, range])
-  @@index([businessId])
 }
 
 model Promotion {
   id          String       @id @default(uuid()) @db.Uuid
-  businessId  String       @db.Uuid
-  name        String
+  name        String       @unique
+  amount      Int          @default(0)
+  isActive    Boolean      @default(true)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
-  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   saleRecords SaleRecord[]
-
-  @@unique([businessId, name])
-  @@unique([businessId, id])
-  @@index([businessId])
 }
 
 model SaleRecord {
-  id               String                 @id @default(uuid()) @db.Uuid
-  businessId       String                 @db.Uuid
-  createdAt        DateTime               @default(now())
-  deskType         String                 @db.Uuid
-  status           String
-  appliedPromotion String?                @db.Uuid
-  amount           Int
-  deliveryType     String
-  deliveryRange    Int?
-  remarks          String?
-  business         Business               @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  deskItem         DeskItem               @relation(fields: [businessId, deskType], references: [businessId, id], onDelete: Restrict, onUpdate: Cascade)
-  deliveryFee      DeliveryFee?           @relation(fields: [businessId, deliveryRange], references: [businessId, range])
-  promotion        Promotion?             @relation(fields: [businessId, appliedPromotion], references: [businessId, id], onDelete: Restrict, onUpdate: Cascade)
-  commissions      SaleRecordCommission[]
+  id                   String                 @id @default(uuid()) @db.Uuid
+  createdAt            DateTime               @default(now())
+  saleDate             DateTime
+  orderNumber          String                 @unique
+  deskType             String                 @db.Uuid
+  quantity             Int                    @default(1)
+  unitPrice            Int
+  promoDiscount        Int                    @default(0)
+  manualDiscount       Int                    @default(0)
+  manualDiscountReason String?
+  status               String
+  appliedPromotion     String?                @db.Uuid
+  amount               Int
+  deliveryType         String
+  deliveryRange        Int?
+  workerFee            Int                    @default(0)
+  workerFeeType        String?
+  customerName         String?
+  remarks              String?
+  paymentSlipImage     String?                @db.Text
+  paidAt               DateTime?
+  deskItem             DeskItem               @relation(fields: [deskType], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  deliveryFee          DeliveryFee?           @relation(fields: [deliveryRange], references: [range])
+  promotion            Promotion?             @relation(fields: [appliedPromotion], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  commissions          SaleRecordCommission[]
 
-  @@index([businessId])
+  @@index([saleDate])
   @@index([deskType])
   @@index([appliedPromotion])
-  @@index([businessId, deliveryRange])
+  @@index([deliveryRange])
 }
 
 model RepairRecord {
   id          String       @id @default(uuid()) @db.Uuid
-  businessId  String       @db.Uuid
-  deskItemId  String       @db.Uuid
-  reportedBy  String       @db.Uuid
-  createdAt   DateTime     @default(now())
-  description String
-  amount      Int
-  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  deskItem    DeskItem     @relation(fields: [businessId, deskItemId], references: [businessId, id], onDelete: Restrict, onUpdate: Cascade)
-  reporter    BusinessUser @relation(fields: [reportedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  deskItemId   String       @db.Uuid
+  reportedBy   String       @db.Uuid
+  createdAt    DateTime     @default(now())
+  reportDate   DateTime
+  quantity     Int          @default(1)
+  size         String?
+  color        String?
+  description  String
+  kind         String       @default("repair")
+  status       String       @default("open")
+  amount       Int
+  deskItem     DeskItem     @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reporter     User         @relation(fields: [reportedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
-  @@index([businessId])
   @@index([deskItemId])
   @@index([reportedBy])
-  @@index([businessId, reportedBy])
 }
 
 model SaleRecordCommission {
-  id             String       @id @default(uuid()) @db.Uuid
-  businessId     String       @db.Uuid
-  saleRecordId   String       @db.Uuid
-  businessUserId String       @db.Uuid
-  amount         Int // Commission amount in baht
-  remarks        String? // Optional notes (e.g., "delivery fee", "lifting fee")
-  createdAt      DateTime     @default(now())
-  business       Business     @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  saleRecord     SaleRecord   @relation(fields: [saleRecordId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  worker         BusinessUser @relation(fields: [businessUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id           String       @id @default(uuid()) @db.Uuid
+  saleRecordId String       @db.Uuid
+  userId       String       @db.Uuid
+  amount       Int
+  remarks      String?
+  createdAt    DateTime     @default(now())
+  saleRecord   SaleRecord   @relation(fields: [saleRecordId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  worker       User         @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
-  @@index([businessId])
   @@index([saleRecordId])
-  @@index([businessUserId])
-  @@index([businessId, saleRecordId])
-  @@index([businessId, businessUserId])
-  @@index([businessId, businessUserId, createdAt])
+  @@index([userId])
+  @@index([userId, createdAt])
 }
 
 model PayrollRecord {
   id              String       @id @default(uuid()) @db.Uuid
-  businessId      String       @db.Uuid
-  businessUserId  String       @db.Uuid
-  month           Int // 1-12
+  userId          String       @db.Uuid
+  month           Int
   year            Int
-  baseSalary      Int // Base monthly salary
-  commissionTotal Int          @default(0) // Sum of commissions for this month
-  bonus           Int? // Optional bonus
-  deduction       Int? // Optional deduction (e.g., advance payment)
-  totalPaid       Int // Calculated: baseSalary + commissionTotal + bonus - deduction
-  paidAt          DateTime? // When payment was actually made
-  remarks         String? // Optional notes
+  baseSalary      Int
+  commissionTotal Int          @default(0)
+  bonus           Int?
+  deduction       Int?
+  totalPaid       Int
+  paidAt          DateTime?
+  remarks         String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
-  business        Business     @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  worker          BusinessUser @relation(fields: [businessUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  worker          User         @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
-  @@unique([businessId, businessUserId, year, month])
-  @@index([businessId])
-  @@index([businessUserId])
-  @@index([businessId, businessUserId])
-  @@index([businessId, year, month])
+  @@unique([userId, year, month])
+  @@index([userId])
+  @@index([year, month])
 }

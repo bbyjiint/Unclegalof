@@ -18,13 +18,16 @@ export function validate(schema, source = "body") {
       // Validate and sanitize
       const validated = schema.parse(data);
       
-      // Replace original data with validated data
+      // Express 5 exposes `req.query` as a getter-only property, so update
+      // the existing object instead of reassigning it.
       if (source === "body") {
         req.body = validated;
-      } else if (source === "query") {
-        req.query = validated;
       } else {
-        req.params = validated;
+        const target = source === "query" ? req.query : req.params;
+        for (const key of Object.keys(target)) {
+          delete target[key];
+        }
+        Object.assign(target, validated);
       }
 
       next();

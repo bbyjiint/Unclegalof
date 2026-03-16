@@ -2,9 +2,28 @@ export type DeliveryMode = "self" | "delivery";
 export type PayStatus = "paid" | "pending" | "deposit";
 export type RepairStatus = "open" | "inprogress" | "done";
 export type RepairKind = "repair" | "claim";
+export type UserRole = "OWNER" | "ADMIN" | "STAFF" | "INVENTORY" | "DELIVERY";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  fullName: string;
+  phone?: string | null;
+  role: UserRole;
+}
+
+export interface AuthResponse {
+  message: string;
+  token: string;
+  user: AuthUser;
+}
+
+export interface CurrentUserResponse {
+  user: AuthUser;
+}
 
 export interface Promotion {
-  id: number;
+  id: string;
   name: string;
   amount: number;
   active: boolean;
@@ -13,7 +32,7 @@ export interface Promotion {
 }
 
 export interface Sale {
-  id: number;
+  id: string;
   orderNumber: string;
   type: string;
   qty: number;
@@ -23,10 +42,12 @@ export interface Sale {
   delivery: DeliveryMode;
   date?: string;
   note?: string | null;
+  paymentSlipImage?: string | null;
+  paidAt?: string | null;
 }
 
 export interface RepairItem {
-  id: number;
+  id: string;
   type: string;
   qty: number;
   size: string;
@@ -43,7 +64,7 @@ export interface InventorySummaryItem {
 }
 
 export interface InventoryMovement {
-  id: number;
+  id: string;
   type: string;
   qty: number;
   direction: "IN" | "OUT";

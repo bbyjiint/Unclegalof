@@ -8,7 +8,6 @@ import promotionsRoutes from "./routes/promotions.routes.js";
 import repairsRoutes from "./routes/repairs.routes.js";
 import salesRoutes from "./routes/sales.routes.js";
 import authRoutes from "./routes/auth.routes.js";
-import testSetupRoutes from "./routes/test-setup.routes.js";
 import { generalRateLimiter } from "./middleware/rateLimit.middleware.js";
 
 export function createApp() {
@@ -36,11 +35,6 @@ export function createApp() {
 
   // Public routes (no auth required)
   app.use("/api/auth", authRoutes);
-  
-  // Test setup route (for development/testing only - disable in production)
-  if (process.env.NODE_ENV !== "production") {
-    app.use("/api/test-setup", testSetupRoutes);
-  }
 
   // Protected routes (require authentication - will be added per route)
   app.use("/api/catalog", catalogRoutes);

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireBusinessAccess, requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
+import { requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 
 const router = Router();
@@ -30,7 +30,6 @@ const paramsIdSchema = z.object({
 router.get(
   "/",
   authenticate,
-  requireBusinessAccess,
   requireOwnerOrAdmin,
   async (req, res, next) => {
     try {
@@ -50,7 +49,6 @@ router.get(
 router.post(
   "/",
   authenticate,
-  requireBusinessAccess,
   requireOwnerOrAdmin,
   writeRateLimiter,
   validate(pipelineSchema),
@@ -58,14 +56,9 @@ router.post(
     try {
       const payload = req.body;
       
-      // Verify deskItem belongs to this business
+      // Verify deskItem exists
       const deskItem = await prisma.deskItem.findUnique({
-        where: {
-          businessId_id: {
-            businessId: req.businessId,
-            id: payload.deskItemId,
-          },
-        },
+        where: { id: payload.deskItemId },
       });
       
       if (!deskItem) {
@@ -88,7 +81,6 @@ router.post(
 router.patch(
   "/:id",
   authenticate,
-  requireBusinessAccess,
   requireOwnerOrAdmin,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
@@ -111,7 +103,6 @@ router.patch(
 router.delete(
   "/:id",
   authenticate,
-  requireBusinessAccess,
   requireOwnerOrAdmin,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),

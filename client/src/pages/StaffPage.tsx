@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { formatMoney, getZoneByKm, DELIVERY_ZONES } from "../data/constants";
 import { api } from "../lib/api";
 import type { DeliveryMode, PayStatus, Promotion, Sale } from "../types";
@@ -31,7 +31,7 @@ const initialForm = (today: string): StaffFormState => ({
   type: "",
   qty: 1,
   price: "",
-  pay: "paid",
+  pay: "pending",
   promoId: "",
   discount: 0,
   manualDisc: 0,
@@ -44,23 +44,19 @@ const initialForm = (today: string): StaffFormState => ({
 
 export default function StaffPage() {
   const today = new Date().toISOString().slice(0, 10);
+  const paymentSlipInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [uploadingSaleId, setUploadingSaleId] = useState<string | null>(null);
+  const [updatingSaleId, setUpdatingSaleId] = useState<string | null>(null);
   const [form, setForm] = useState<StaffFormState>(initialForm(today));
 
-  // Create price table and ICE rates from products
-  const PRICE_TABLE = useMemo(() => {
-    const table: Record<string, { self: number | null; delivery: number | null }> = {};
-    products.forEach(product => {
-      table[product.name] = {
-        self: product.onsitePrice || null,
-        delivery: product.deliveryPrice || null,
-      };
-    });
-    return table;
-  }, [products]);
+  const selectedProduct = useMemo(
+    () => products.find((product) => product.name === form.type) || null,
+    [products, form.type]
+  );
 
   const ICE_RATES: Record<string, number> = {
     "ลอฟขาเอียง": 100,
@@ -80,9 +76,22 @@ export default function StaffPage() {
         api.sales(now.getMonth() + 1, now.getFullYear()),
         api.getProducts(),
       ]);
+      const nextProducts = productsData.items || [];
       setPromotions(promoData.items || []);
       setSales(salesData.items || []);
-      setProducts(productsData.items || []);
+      setProducts(nextProducts);
+      setForm((current) => {
+        if (current.type || nextProducts.length === 0) {
+          return current;
+        }
+
+        const firstProduct = nextProducts[0];
+        return {
+          ...current,
+          type: firstProduct.name,
+          price: current.delivery === "delivery" ? firstProduct.deliveryPrice : firstProduct.onsitePrice,
+        };
+      });
     } catch (error) {
       console.error("Failed to load page:", error);
       alert(error instanceof Error ? error.message : "Failed to load data");
@@ -103,14 +112,15 @@ export default function StaffPage() {
   const grandTotal = unitNet * Number(form.qty || 1) + workerFee;
 
   useEffect(() => {
-    if (!form.type) return;
-    const row = PRICE_TABLE[form.type];
-    if (!row || row.self == null) return;
+    if (!selectedProduct) {
+      return;
+    }
+
     setForm((current) => ({
       ...current,
-      price: current.delivery === "delivery" ? row.delivery ?? "" : row.self ?? ""
+      price: current.delivery === "delivery" ? selectedProduct.deliveryPrice : selectedProduct.onsitePrice,
     }));
-  }, [form.type, form.delivery, PRICE_TABLE]);
+  }, [selectedProduct, form.delivery]);
 
   useEffect(() => {
     setForm((current) => ({
@@ -124,8 +134,52 @@ export default function StaffPage() {
     return { total, count: sales.length };
   }, [sales]);
 
+  function getPayStatusLabel(status: PayStatus): string {
+    if (status === "paid") {
+      return "ชำระแล้ว";
+    }
+
+    if (status === "deposit") {
+      return "มัดจำแล้ว";
+    }
+
+    return "ค้างชำระ";
+  }
+
+  function handleProductChange(productName: string) {
+    const product = products.find((item) => item.name === productName);
+
+    setForm((current) => ({
+      ...current,
+      type: productName,
+      price: product
+        ? current.delivery === "delivery"
+          ? product.deliveryPrice
+          : product.onsitePrice
+        : "",
+    }));
+  }
+
+  function handleDeliveryChange(delivery: DeliveryMode) {
+    setForm((current) => ({
+      ...current,
+      delivery,
+      price: selectedProduct
+        ? delivery === "delivery"
+          ? selectedProduct.deliveryPrice
+          : selectedProduct.onsitePrice
+        : current.price,
+    }));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+
+    if (Number(form.manualDisc) > 0 && !form.manualReason.trim()) {
+      alert("กรุณาระบุเหตุผลลดเพิ่ม");
+      return;
+    }
+
     try {
       await api.createSale({
         date: form.date,
@@ -143,7 +197,7 @@ export default function StaffPage() {
         note: form.note,
         wFee: workerFee,
         wType: form.delivery === "delivery" ? "po" : "ice",
-        promoId: form.promoId ? Number(form.promoId) : null
+        promoId: form.promoId || null
       });
       setForm(initialForm(today));
       await loadPage();
@@ -153,13 +207,64 @@ export default function StaffPage() {
     }
   }
 
-  async function handleDeleteSale(id: number): Promise<void> {
+  async function handleDeleteSale(id: string): Promise<void> {
     try {
       await api.deleteSale(id);
       await loadPage();
     } catch (error) {
       console.error("Failed to delete sale:", error);
       alert(error instanceof Error ? error.message : "Failed to delete sale");
+    }
+  }
+
+  function openPaymentSlipPicker(saleId: string) {
+    paymentSlipInputRefs.current[saleId]?.click();
+  }
+
+  async function handlePaymentSlipUpload(saleId: string, event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("กรุณาอัปโหลดไฟล์รูปภาพ");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      setUploadingSaleId(saleId);
+
+      const imageData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Failed to read image file"));
+        reader.readAsDataURL(file);
+      });
+
+      await api.uploadSalePaymentSlip(saleId, { imageData });
+      await loadPage();
+    } catch (error) {
+      console.error("Failed to upload payment slip:", error);
+      alert(error instanceof Error ? error.message : "Failed to upload payment slip");
+    } finally {
+      setUploadingSaleId(null);
+      event.target.value = "";
+    }
+  }
+
+  async function handleMarkSalePaid(saleId: string): Promise<void> {
+    try {
+      setUpdatingSaleId(saleId);
+      await api.updateSaleStatus(saleId, { status: "paid" });
+      await loadPage();
+    } catch (error) {
+      console.error("Failed to update sale status:", error);
+      alert(error instanceof Error ? error.message : "Failed to update sale status");
+    } finally {
+      setUpdatingSaleId(null);
     }
   }
 
@@ -185,7 +290,7 @@ export default function StaffPage() {
           </div>
           <div className="fg">
             <label>ประเภทสินค้า</label>
-            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} required>
+            <select value={form.type} onChange={(e) => handleProductChange(e.target.value)} required>
               <option value="">-- เลือกประเภท --</option>
               {products.map((product) => <option key={product.id} value={product.name}>{product.name}</option>)}
             </select>
@@ -239,17 +344,22 @@ export default function StaffPage() {
         <div className="frow s1">
           <div className="fg">
             <label>เหตุผลลดเพิ่ม</label>
-            <input type="text" value={form.manualReason} onChange={(e) => setForm({ ...form, manualReason: e.target.value })} />
+            <input
+              type="text"
+              value={form.manualReason}
+              onChange={(e) => setForm({ ...form, manualReason: e.target.value })}
+              required={Number(form.manualDisc) > 0}
+            />
           </div>
         </div>
 
         <div className="dtoggle">
           <label>วิธีรับสินค้า</label>
           <div className="dopts">
-            <button type="button" className={`dopt${form.delivery === "self" ? " sel" : ""}`} onClick={() => setForm({ ...form, delivery: "self" })}>
+            <button type="button" className={`dopt${form.delivery === "self" ? " sel" : ""}`} onClick={() => handleDeliveryChange("self")}>
               🏭 รับที่โกดัง
             </button>
-            <button type="button" className={`dopt${form.delivery === "delivery" ? " sel" : ""}`} onClick={() => setForm({ ...form, delivery: "delivery" })}>
+            <button type="button" className={`dopt${form.delivery === "delivery" ? " sel" : ""}`} onClick={() => handleDeliveryChange("delivery")}>
               🚚 ส่งถึงบ้าน
             </button>
           </div>
@@ -319,8 +429,47 @@ export default function StaffPage() {
                   <span>x{sale.qty}</span>
                   <span className={`bdg ${sale.delivery === "delivery" ? "del" : "pick"}`}>{sale.delivery === "delivery" ? "🚚 ส่งบ้าน" : "🏭 รับเอง"}</span>
                   <span className={`bdg ${sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "dep" : "pend"}`}>
-                    {sale.payStatus}
+                    {getPayStatusLabel(sale.payStatus)}
                   </span>
+                </div>
+                <div className="sale-actions">
+                  <input
+                    ref={(node) => {
+                      paymentSlipInputRefs.current[sale.id] = node;
+                    }}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(event) => {
+                      void handlePaymentSlipUpload(sale.id, event);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="sale-action-btn"
+                    onClick={() => openPaymentSlipPicker(sale.id)}
+                    disabled={uploadingSaleId === sale.id}
+                  >
+                    {uploadingSaleId === sale.id ? "กำลังอัปโหลด..." : sale.paymentSlipImage ? "อัปเดตสลิป" : "แนบสลิปโอนเงิน"}
+                  </button>
+                  {sale.paymentSlipImage && (
+                    <a className="sale-slip-link" href={sale.paymentSlipImage} target="_blank" rel="noreferrer">
+                      ดูสลิป
+                    </a>
+                  )}
+                  <label className="sale-paid-toggle">
+                    <input
+                      type="checkbox"
+                      checked={sale.payStatus === "paid"}
+                      disabled={sale.payStatus === "paid" || !sale.paymentSlipImage || updatingSaleId === sale.id}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          void handleMarkSalePaid(sale.id);
+                        }
+                      }}
+                    />
+                    <span>อัปเดตเป็นชำระแล้ว</span>
+                  </label>
                 </div>
               </div>
               <div className="sitem-r">

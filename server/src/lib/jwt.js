@@ -11,8 +11,6 @@ if (!JWT_SECRET) {
  * Generate a JWT token for a user
  * @param {Object} payload - Token payload
  * @param {string} payload.userId - User ID
- * @param {string} payload.businessUserId - BusinessUser ID (membership ID)
- * @param {string} payload.businessId - Business ID
  * @param {string} payload.role - User role
  * @param {string} payload.email - User email (for identification)
  * @returns {string} JWT token
@@ -21,8 +19,6 @@ export function generateToken(payload) {
   return jwt.sign(
     {
       userId: payload.userId,
-      businessUserId: payload.businessUserId,
-      businessId: payload.businessId,
       role: payload.role,
       email: payload.email,
     },
