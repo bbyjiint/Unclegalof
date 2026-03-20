@@ -20,7 +20,6 @@ export default function AppShell({ children }: PropsWithChildren) {
           <div className="ico">🪑</div>
           <div>
             <h1>โต๊ะลพบุรี</h1>
-            <p>React + TypeScript + Express + Prisma</p>
           </div>
         </div>
         <nav className="vtoggle">

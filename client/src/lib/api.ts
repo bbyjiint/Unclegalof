@@ -20,6 +20,7 @@ type RequestOptions = RequestInit & {
 type CreatePromotionPayload = {
   name: string;
   amount: number;
+  amountType: "fixed" | "percent";
   active?: boolean;
 };
 

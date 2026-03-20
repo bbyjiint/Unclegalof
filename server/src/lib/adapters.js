@@ -123,6 +123,7 @@ export function promotionToFrontend(promotion, index = null) {
   return {
     id: promotion.id,
     name: promotion.name,
+    amountType: promotion.amountType === "percent" ? "percent" : "fixed",
     amount: promotion.amount ?? 0,
     active: promotion.isActive ?? true,
     createdAt: promotion.createdAt?.toISOString(),

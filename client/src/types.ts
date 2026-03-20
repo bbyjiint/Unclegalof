@@ -22,9 +22,12 @@ export interface CurrentUserResponse {
   user: AuthUser;
 }
 
+export type PromotionAmountType = "fixed" | "percent";
+
 export interface Promotion {
   id: string;
   name: string;
+  amountType: PromotionAmountType;
   amount: number;
   active: boolean;
   createdAt?: string;

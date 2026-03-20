@@ -27,6 +27,11 @@ enum DeliveryMethod {
   delivery
 }
 
+enum PromotionAmountType {
+  fixed
+  percent
+}
+
 model User {
   id                    String                 @id @default(uuid()) @db.Uuid
   fullName              String
@@ -63,10 +68,11 @@ model DeliveryFee {
 }
 
 model Promotion {
-  id          String       @id @default(uuid()) @db.Uuid
-  name        String       @unique
-  amount      Int          @default(0)
-  isActive    Boolean      @default(true)
+  id          String               @id @default(uuid()) @db.Uuid
+  name        String               @unique
+  amountType  PromotionAmountType  @default(fixed)
+  amount      Int                  @default(0)
+  isActive    Boolean              @default(true)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   saleRecords SaleRecord[]

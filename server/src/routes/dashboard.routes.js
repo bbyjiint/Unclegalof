@@ -5,6 +5,7 @@ import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
 import { saleRecordToSale, promotionToFrontend } from "../lib/adapters.js";
+import { findAllPromotionsRows } from "../lib/promotions.db.js";
 
 const router = Router();
 
@@ -42,16 +43,12 @@ router.get(
         orderBy: { createdAt: "desc" },
       });
       
-      // Get promotions
-      const promotions = await prisma.promotion.findMany({
-        orderBy: { createdAt: "desc" },
-      });
-      
+      const promotionRows = await findAllPromotionsRows();
+
       // Transform sales to frontend format
       const sales = saleRecords.map((sale, index) => saleRecordToSale(sale, index));
-      
-      // Transform promotions to frontend format
-      const promotionsFrontend = promotions.map((promo, index) => promotionToFrontend(promo, index));
+
+      const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
       
       // Calculate summary
       const income = sales.reduce((sum, sale) => sum + sale.grandTotal, 0);

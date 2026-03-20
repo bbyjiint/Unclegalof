@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { formatMoney, getZoneByKm, DELIVERY_ZONES } from "../data/constants";
 import { api } from "../lib/api";
+import { formatPromoValueLabel, promoUnitDiscountBaht } from "../lib/promotions";
 import type { DeliveryMode, PayStatus, Promotion, Sale } from "../types";
 
 type StaffFormState = {
@@ -52,6 +54,8 @@ export default function StaffPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [uploadingSaleId, setUploadingSaleId] = useState<string | null>(null);
+  const [slipPreviewSrc, setSlipPreviewSrc] = useState<string | null>(null);
+  const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
   const [form, setForm] = useState<StaffFormState>(initialForm(today));
 
   const selectedProduct = useMemo(
@@ -105,7 +109,6 @@ export default function StaffPage() {
     void loadPage();
   }, []);
 
-  const activePromo = promotions.find((promo) => String(promo.id) === String(form.promoId));
   const unitDiscount = Number(form.discount || 0) + Number(form.manualDisc || 0);
   const unitNet = Math.max(0, Number(form.price || 0) - unitDiscount);
   const zone = form.delivery === "delivery" ? getZoneByKm(Number(form.km || 0)) : null;
@@ -124,11 +127,15 @@ export default function StaffPage() {
   }, [selectedProduct, form.delivery]);
 
   useEffect(() => {
-    setForm((current) => ({
-      ...current,
-      discount: activePromo ? activePromo.amount : 0
-    }));
-  }, [activePromo]);
+    const promo = promotions.find((p) => String(p.id) === String(form.promoId));
+    if (!promo) {
+      setForm((current) => ({ ...current, discount: 0 }));
+      return;
+    }
+    const unitPrice = Number(form.price) || 0;
+    const discount = promoUnitDiscountBaht(promo, unitPrice);
+    setForm((current) => ({ ...current, discount }));
+  }, [form.promoId, form.price, promotions]);
 
   const stats = useMemo(() => {
     const total = sales.reduce((sum, sale) => sum + Number(sale.grandTotal || 0), 0);
@@ -312,7 +319,7 @@ export default function StaffPage() {
               <option value="">— ไม่มีส่วนลด —</option>
               {promotions.filter((promo) => promo.active).map((promo) => (
                 <option key={promo.id} value={promo.id}>
-                  {promo.name} (ลด {formatMoney(promo.amount)})
+                  {promo.name} (ลด {formatPromoValueLabel(promo)})
                 </option>
               ))}
             </select>
@@ -432,7 +439,10 @@ export default function StaffPage() {
                     {getPayStatusLabel(sale.payStatus)}
                   </span>
                 </div>
-                <div className="sale-actions">
+              </div>
+              <div className="sitem-right">
+                <div className="sprice">{formatMoney(sale.grandTotal)}</div>
+                <div className="sale-actions sale-actions--staff-row">
                   <input
                     ref={(node) => {
                       paymentSlipInputRefs.current[sale.id] = node;
@@ -446,27 +456,30 @@ export default function StaffPage() {
                   />
                   <button
                     type="button"
-                    className="sale-action-btn"
+                    className="sale-action-btn sale-action-btn--prominent"
                     onClick={() => openPaymentSlipPicker(sale.id)}
                     disabled={uploadingSaleId === sale.id}
                   >
                     {uploadingSaleId === sale.id ? "กำลังอัปโหลด..." : sale.paymentSlipImage ? "อัปเดตสลิป" : "แนบสลิปโอนเงิน"}
                   </button>
                   {sale.paymentSlipImage && (
-                    <a className="sale-slip-link" href={sale.paymentSlipImage} target="_blank" rel="noreferrer">
+                    <button
+                      type="button"
+                      className="sale-slip-link sale-slip-link--staff"
+                      onClick={() => setSlipPreviewSrc(sale.paymentSlipImage!)}
+                    >
                       ดูสลิป
-                    </a>
+                    </button>
                   )}
                 </div>
-              </div>
-              <div className="sitem-r">
-                <div className="sprice">{formatMoney(sale.grandTotal)}</div>
               </div>
               <button className="bdel" type="button" onClick={() => handleDeleteSale(sale.id)}>✕</button>
             </div>
           ))
         )}
       </section>
+
+      <PaymentSlipLightbox imageSrc={slipPreviewSrc} onClose={closeSlipPreview} />
     </main>
   );
 }

@@ -1,10 +1,12 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { formatMoney } from "../data/constants";
 import { api } from "../lib/api";
-import type { OwnerDashboard } from "../types";
+import type { OwnerDashboard, PromotionAmountType } from "../types";
 
 type PromotionFormState = {
   name: string;
+  amountType: PromotionAmountType;
   amount: string;
 };
 
@@ -14,22 +16,10 @@ export default function OwnerPage() {
   const [error, setError] = useState<string | null>(null);
   const [month] = useState<number>(now.getMonth() + 1);
   const [year] = useState<number>(now.getFullYear());
-  const [promoForm, setPromoForm] = useState<PromotionFormState>({ name: "", amount: "" });
+  const [promoForm, setPromoForm] = useState<PromotionFormState>({ name: "", amountType: "fixed", amount: "" });
   const [updatingSaleId, setUpdatingSaleId] = useState<string | null>(null);
   const [slipPreviewSrc, setSlipPreviewSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!slipPreviewSrc) {
-      return;
-    }
-    function onKeyDown(e: globalThis.KeyboardEvent): void {
-      if (e.key === "Escape") {
-        setSlipPreviewSrc(null);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [slipPreviewSrc]);
+  const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
 
   async function loadPage(): Promise<void> {
     try {
@@ -47,13 +37,24 @@ export default function OwnerPage() {
 
   async function addPromo(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    await api.createPromotion({
-      name: promoForm.name,
-      amount: Number(promoForm.amount),
-      active: true
-    });
-    setPromoForm({ name: "", amount: "" });
-    await loadPage();
+    setError(null);
+    const amt = Number(promoForm.amount);
+    if (promoForm.amountType === "percent" && (amt < 0 || amt > 100)) {
+      setError("ส่วนลดเปอร์เซ็นต์ต้องอยู่ระหว่าง 0–100");
+      return;
+    }
+    try {
+      await api.createPromotion({
+        name: promoForm.name,
+        amount: amt,
+        amountType: promoForm.amountType,
+        active: true
+      });
+      setPromoForm({ name: "", amountType: "fixed", amount: "" });
+      await loadPage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "เพิ่มโปรโมชั่นไม่สำเร็จ");
+    }
   }
 
   async function togglePromo(id: string, active: boolean): Promise<void> {
@@ -110,11 +111,28 @@ export default function OwnerPage() {
           <div className="frow">
             <div className="fg">
               <label>ชื่อโปรโมชั่น</label>
-              <input value={promoForm.name} onChange={(e) => setPromoForm({ ...promoForm, name: e.target.value })} />
+              <input value={promoForm.name} onChange={(e) => setPromoForm({ ...promoForm, name: e.target.value })} required />
             </div>
             <div className="fg">
-              <label>ส่วนลด</label>
-              <input type="number" value={promoForm.amount} onChange={(e) => setPromoForm({ ...promoForm, amount: e.target.value })} />
+              <label>ประเภทส่วนลด</label>
+              <select
+                value={promoForm.amountType}
+                onChange={(e) => setPromoForm({ ...promoForm, amountType: e.target.value as PromotionAmountType })}
+              >
+                <option value="fixed">จำนวนเงิน (บาท)</option>
+                <option value="percent">เปอร์เซ็นต์ (%)</option>
+              </select>
+            </div>
+            <div className="fg">
+              <label>{promoForm.amountType === "percent" ? "เปอร์เซ็นต์ (0–100)" : "จำนวนเงิน (บาท)"}</label>
+              <input
+                type="number"
+                min={0}
+                max={promoForm.amountType === "percent" ? 100 : undefined}
+                value={promoForm.amount}
+                onChange={(e) => setPromoForm({ ...promoForm, amount: e.target.value })}
+                required
+              />
             </div>
           </div>
           <button className="btnok" type="submit">➕ เพิ่มโปรโมชั่น</button>
@@ -125,14 +143,32 @@ export default function OwnerPage() {
               <div className="crow-l">
                 <div>
                   <div className="ctxt">{promo.name}</div>
-                  <div className="csub">{formatMoney(promo.amount)}</div>
+                  <div className="csub">
+                    {promo.amountType === "percent" ? `ลด ${promo.amount}%` : `ลด ${formatMoney(promo.amount)}`}
+                  </div>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" onClick={() => togglePromo(promo.id, !promo.active)}>
-                  {promo.active ? "ปิด" : "เปิด"}
+              <div className="promo-row-actions">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={promo.active}
+                  className={`promo-toggle${promo.active ? " promo-toggle--on" : " promo-toggle--off"}`}
+                  onClick={() => togglePromo(promo.id, !promo.active)}
+                >
+                  <span className="promo-toggle-text">{promo.active ? "เปิดใช้งาน" : "ปิดใช้งาน"}</span>
+                  <span className="promo-toggle-track" aria-hidden>
+                    <span className="promo-toggle-knob" />
+                  </span>
                 </button>
-                <button type="button" onClick={() => deletePromo(promo.id)}>ลบ</button>
+                <button
+                  type="button"
+                  className="promo-del-x"
+                  aria-label={`ลบโปรโมชั่น ${promo.name}`}
+                  onClick={() => deletePromo(promo.id)}
+                >
+                  ✕
+                </button>
               </div>
             </div>
           ))}
@@ -200,67 +236,7 @@ export default function OwnerPage() {
         )}
       </section>
 
-      {slipPreviewSrc && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="ดูสลิปโอนเงิน"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1000,
-            background: "rgba(0,0,0,0.72)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-            cursor: "pointer"
-          }}
-          onClick={() => {
-            setSlipPreviewSrc(null);
-          }}
-        >
-          <div
-            style={{
-              position: "relative",
-              maxWidth: "min(920px, 96vw)",
-              maxHeight: "92vh",
-              cursor: "default",
-              background: "#111",
-              borderRadius: 12,
-              padding: 12,
-              boxShadow: "0 12px 48px rgba(0,0,0,0.45)"
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-            }}
-          >
-            <img
-              src={slipPreviewSrc}
-              alt="สลิปโอนเงิน"
-              style={{
-                display: "block",
-                maxWidth: "100%",
-                maxHeight: "calc(92vh - 56px)",
-                width: "auto",
-                height: "auto",
-                objectFit: "contain",
-                borderRadius: 8
-              }}
-            />
-            <button
-              type="button"
-              className="btnok"
-              style={{ marginTop: 10, width: "100%" }}
-              onClick={() => {
-                setSlipPreviewSrc(null);
-              }}
-            >
-              ปิด
-            </button>
-          </div>
-        </div>
-      )}
+      <PaymentSlipLightbox imageSrc={slipPreviewSrc} onClose={closeSlipPreview} />
     </main>
   );
 }
