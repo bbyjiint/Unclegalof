@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { ClipboardList, PlusCircle, Tag, X } from "lucide-react";
 import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { formatMoney } from "../data/constants";
 import { api } from "../lib/api";
@@ -106,7 +107,10 @@ export default function OwnerPage() {
       </div>
 
       <section className="card">
-        <h3>🏷️ จัดการโปรโมชั่น</h3>
+        <h3 className="h-with-icon">
+          <Tag size={20} strokeWidth={2} aria-hidden />
+          จัดการโปรโมชั่น
+        </h3>
         <form onSubmit={addPromo}>
           <div className="frow">
             <div className="fg">
@@ -135,7 +139,10 @@ export default function OwnerPage() {
               />
             </div>
           </div>
-          <button className="btnok" type="submit">➕ เพิ่มโปรโมชั่น</button>
+          <button className="btnok with-icon" type="submit">
+            <PlusCircle size={18} strokeWidth={2} aria-hidden />
+            เพิ่มโปรโมชั่น
+          </button>
         </form>
         <div style={{ marginTop: 16 }}>
           {promotions.map((promo) => (
@@ -167,7 +174,7 @@ export default function OwnerPage() {
                   aria-label={`ลบโปรโมชั่น ${promo.name}`}
                   onClick={() => deletePromo(promo.id)}
                 >
-                  ✕
+                  <X size={18} strokeWidth={2.5} aria-hidden />
                 </button>
               </div>
             </div>
@@ -176,7 +183,10 @@ export default function OwnerPage() {
       </section>
 
       <section className="card">
-        <h3>📋 รายการขาย</h3>
+        <h3 className="h-with-icon">
+          <ClipboardList size={20} strokeWidth={2} aria-hidden />
+          รายการขาย
+        </h3>
         {sales.length === 0 ? (
           <div className="empty"><p>ไม่มีรายการ</p></div>
         ) : (

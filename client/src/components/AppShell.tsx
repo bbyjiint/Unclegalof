@@ -1,12 +1,14 @@
 import type { PropsWithChildren } from "react";
+import type { LucideIcon } from "lucide-react";
+import { Armchair, Package, Shield, User, Wrench } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 
-const navItems = [
-  { to: "/staff", label: "👤 พนักงาน" },
-  { to: "/inventory", label: "📦 คลัง" },
-  { to: "/repair", label: "🔧 ซ่อม/เคลม" },
-  { to: "/owner", label: "🔐 เจ้าของ" }
+const navItems: { to: string; label: string; Icon: LucideIcon }[] = [
+  { to: "/staff", label: "พนักงาน", Icon: User },
+  { to: "/inventory", label: "คลัง", Icon: Package },
+  { to: "/repair", label: "ซ่อม/เคลม", Icon: Wrench },
+  { to: "/owner", label: "เจ้าของ", Icon: Shield }
 ];
 
 export default function AppShell({ children }: PropsWithChildren) {
@@ -17,7 +19,9 @@ export default function AppShell({ children }: PropsWithChildren) {
     <>
       <header className="header">
         <div className="hlogo">
-          <div className="ico">🪑</div>
+          <div className="ico" aria-hidden>
+            <Armchair size={24} strokeWidth={2} />
+          </div>
           <div>
             <h1>โต๊ะลพบุรี</h1>
           </div>
@@ -31,10 +35,13 @@ export default function AppShell({ children }: PropsWithChildren) {
                   to={item.to}
                   className={({ isActive }) => `vbtn${isActive ? " active" : ""}`}
                 >
-                  {item.label}
+                  <span className="nav-link-inner">
+                    <item.Icon size={18} strokeWidth={2} />
+                    {item.label}
+                  </span>
                 </NavLink>
               ))}
-              <button type="button" className="vbtn" onClick={logout}>
+              <button type="button" className="vbtn vbtn-signout" onClick={logout}>
                 ออกจากระบบ
               </button>
             </>

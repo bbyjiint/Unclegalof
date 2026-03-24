@@ -1,4 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  ClipboardList,
+  ImagePlus,
+  MapPin,
+  Package,
+  PlusCircle,
+  Save,
+  Truck,
+  Warehouse,
+  Wallet,
+  X
+} from "lucide-react";
 import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { formatMoney, getZoneByKm, DELIVERY_ZONES } from "../data/constants";
 import { api } from "../lib/api";
@@ -278,7 +290,10 @@ export default function StaffPage() {
       </section>
 
       <form className="card" onSubmit={handleSubmit}>
-        <h3>➕ บันทึกการขาย</h3>
+        <h3 className="h-with-icon">
+          <PlusCircle size={20} strokeWidth={2} aria-hidden />
+          บันทึกการขาย
+        </h3>
         <div className="frow">
           <div className="fg">
             <label>วันที่ขาย</label>
@@ -353,17 +368,22 @@ export default function StaffPage() {
           <label>วิธีรับสินค้า</label>
           <div className="dopts">
             <button type="button" className={`dopt${form.delivery === "selfpickup" ? " sel" : ""}`} onClick={() => handleDeliveryChange("selfpickup")}>
-              🏭 รับที่โกดัง
+              <Warehouse size={16} strokeWidth={2} aria-hidden />
+              รับที่โกดัง
             </button>
             <button type="button" className={`dopt${form.delivery === "delivery" ? " sel" : ""}`} onClick={() => handleDeliveryChange("delivery")}>
-              🚚 ส่งถึงบ้าน
+              <Truck size={16} strokeWidth={2} aria-hidden />
+              ส่งถึงบ้าน
             </button>
           </div>
         </div>
 
         {form.delivery === "delivery" && (
           <div className="delbox show">
-            <div className="delbox-title">📍 ข้อมูลการจัดส่ง</div>
+            <div className="delbox-title">
+              <MapPin size={14} strokeWidth={2} aria-hidden />
+              ข้อมูลการจัดส่ง
+            </div>
             <div className="frow">
               <div className="fg">
                 <label>ระยะทาง (กม.)</label>
@@ -402,7 +422,10 @@ export default function StaffPage() {
         </div>
 
         <div className="card" style={{ background: "linear-gradient(135deg,var(--green),var(--green-light))", color: "white" }}>
-          <h3 style={{ color: "white" }}>💰 ยอดรวม</h3>
+          <h3 className="h-with-icon" style={{ color: "white" }}>
+            <Wallet size={20} strokeWidth={2} aria-hidden />
+            ยอดรวม
+          </h3>
           <div className="crow">
             <div className="ctxt">ราคาสินค้าสุทธิ</div>
             <div className="crow-r">{formatMoney(unitNet * Number(form.qty || 1))}</div>
@@ -417,15 +440,26 @@ export default function StaffPage() {
           </div>
         </div>
 
-        <button className="btnok" type="submit" disabled={!form.type || !form.price}>💾 บันทึกการขาย</button>
+        <button className="btnok" type="submit" disabled={!form.type || !form.price}>
+          <Save size={18} strokeWidth={2} aria-hidden />
+          บันทึกการขาย
+        </button>
       </form>
 
       <section>
-        <div className="slist-title">📋 รายการขายเดือนนี้</div>
+        <div className="slist-title with-icon">
+          <ClipboardList size={16} strokeWidth={2} aria-hidden />
+          รายการขายเดือนนี้
+        </div>
         {loading ? (
           <div className="empty"><p>กำลังโหลด...</p></div>
         ) : sales.length === 0 ? (
-          <div className="empty"><div className="ico">📦</div><p>ยังไม่มีรายการ</p></div>
+          <div className="empty">
+            <div className="ico" aria-hidden>
+              <Package size={26} strokeWidth={1.75} />
+            </div>
+            <p>ยังไม่มีรายการ</p>
+          </div>
         ) : (
           sales.map((sale) => (
             <div key={sale.id} className={`sitem ${sale.delivery}`}>
@@ -434,7 +468,19 @@ export default function StaffPage() {
                 <div className="sdetail">
                   <span>{sale.type}</span>
                   <span>x{sale.qty}</span>
-                  <span className={`bdg ${sale.delivery === "delivery" ? "del" : "pick"}`}>{sale.delivery === "delivery" ? "🚚 ส่งบ้าน" : "🏭 รับเอง"}</span>
+                  <span className={`bdg with-icon-sm ${sale.delivery === "delivery" ? "del" : "pick"}`}>
+                    {sale.delivery === "delivery" ? (
+                      <>
+                        <Truck size={11} strokeWidth={2.5} aria-hidden />
+                        ส่งบ้าน
+                      </>
+                    ) : (
+                      <>
+                        <Warehouse size={11} strokeWidth={2.5} aria-hidden />
+                        รับเอง
+                      </>
+                    )}
+                  </span>
                   <span className={`bdg ${sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "dep" : "pend"}`}>
                     {getPayStatusLabel(sale.payStatus)}
                   </span>
@@ -460,7 +506,19 @@ export default function StaffPage() {
                     onClick={() => openPaymentSlipPicker(sale.id)}
                     disabled={uploadingSaleId === sale.id}
                   >
-                    {uploadingSaleId === sale.id ? "กำลังอัปโหลด..." : sale.paymentSlipImage ? "อัปเดตสลิป" : "แนบสลิปโอนเงิน"}
+                    {uploadingSaleId === sale.id ? (
+                      "กำลังอัปโหลด..."
+                    ) : sale.paymentSlipImage ? (
+                      <>
+                        <ImagePlus size={16} strokeWidth={2} aria-hidden />
+                        อัปเดตสลิป
+                      </>
+                    ) : (
+                      <>
+                        <ImagePlus size={16} strokeWidth={2} aria-hidden />
+                        แนบสลิปโอนเงิน
+                      </>
+                    )}
                   </button>
                   {sale.paymentSlipImage && (
                     <button
@@ -473,7 +531,9 @@ export default function StaffPage() {
                   )}
                 </div>
               </div>
-              <button className="bdel" type="button" onClick={() => handleDeleteSale(sale.id)}>✕</button>
+              <button className="bdel" type="button" aria-label="ลบรายการ" onClick={() => handleDeleteSale(sale.id)}>
+                <X size={16} strokeWidth={2.5} aria-hidden />
+              </button>
             </div>
           ))
         )}

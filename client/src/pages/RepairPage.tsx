@@ -1,4 +1,14 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  AlertTriangle,
+  Camera,
+  CheckCircle2,
+  Hash,
+  Palette,
+  Ruler,
+  Wrench,
+  X
+} from "lucide-react";
 import { api } from "../lib/api";
 import type { RepairItem, RepairKind, RepairStatus } from "../types";
 
@@ -183,11 +193,17 @@ export default function RepairPage() {
   return (
     <main className="wrap">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ fontFamily: "Prompt", fontSize: 17, fontWeight: 700, color: "var(--dark)" }}>🔧 สินค้ารอซ่อม / เคลม</div>
+        <div className="h-with-icon" style={{ fontFamily: "Prompt", fontSize: 17, fontWeight: 700, color: "var(--dark)" }}>
+          <Wrench size={22} strokeWidth={2} aria-hidden />
+          สินค้ารอซ่อม / เคลม
+        </div>
       </div>
 
       <form className="card" onSubmit={handleSubmit}>
-        <h3>⚠️ แจ้งสินค้าซ่อม/เคลม</h3>
+        <h3 className="h-with-icon">
+          <AlertTriangle size={20} strokeWidth={2} aria-hidden />
+          แจ้งสินค้าซ่อม/เคลม
+        </h3>
         <div className="frow">
           <div className="fg">
             <label>ประเภทสินค้า</label>
@@ -268,7 +284,7 @@ export default function RepairPage() {
                       }}
                       aria-label="ลบรูป"
                     >
-                      ×
+                      <X size={14} strokeWidth={2.5} aria-hidden />
                     </button>
                   </div>
                 ))}
@@ -286,21 +302,36 @@ export default function RepairPage() {
           type="submit"
           disabled={productTypes.length === 0 || !form.type.trim() || !form.reason.trim()}
         >
-          ⚠️ บันทึกแจ้ง
+          <AlertTriangle size={18} strokeWidth={2} aria-hidden />
+          บันทึกแจ้ง
         </button>
       </form>
 
       <section>
         {items.length === 0 ? (
-          <div className="empty"><p>✅ ไม่มีสินค้ารอซ่อม/เคลม</p></div>
+          <div className="empty">
+            <div className="h-with-icon" style={{ justifyContent: "center", color: "var(--gray)" }}>
+              <CheckCircle2 size={18} strokeWidth={2} aria-hidden style={{ color: "var(--green)" }} />
+              ไม่มีสินค้ารอซ่อม/เคลม
+            </div>
+          </div>
         ) : (
           items.map((item) => (
             <div key={item.id} className="card">
               <h3>{item.type}</h3>
               <div className="sdetail">
-                <span>📐 {item.size}</span>
-                <span>🎨 {item.color}</span>
-                <span>🔢 {item.qty} ชุด</span>
+                <span className="with-icon-sm">
+                  <Ruler size={12} strokeWidth={2} aria-hidden />
+                  {item.size}
+                </span>
+                <span className="with-icon-sm">
+                  <Palette size={12} strokeWidth={2} aria-hidden />
+                  {item.color}
+                </span>
+                <span className="with-icon-sm">
+                  <Hash size={12} strokeWidth={2} aria-hidden />
+                  {item.qty} ชุด
+                </span>
                 <span>{item.status}</span>
               </div>
               <p style={{ marginTop: 10 }}>{item.reason}</p>
@@ -332,10 +363,19 @@ export default function RepairPage() {
                 {(item.images?.length ?? 0) < MAX_REPAIR_PHOTOS && (
                   <button
                     type="button"
+                    className="with-icon-sm"
+                    style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", cursor: "pointer" }}
                     onClick={() => openRepairPhotoPicker(item.id)}
                     disabled={uploadingRepairId === item.id}
                   >
-                    {uploadingRepairId === item.id ? "กำลังอัปโหลด..." : "📷 แนบรูป"}
+                    {uploadingRepairId === item.id ? (
+                      "กำลังอัปโหลด..."
+                    ) : (
+                      <>
+                        <Camera size={14} strokeWidth={2} aria-hidden />
+                        แนบรูป
+                      </>
+                    )}
                   </button>
                 )}
                 {item.status === "open" && <button type="button" onClick={() => updateStatus(item.id, "inprogress")}>เริ่มซ่อม</button>}

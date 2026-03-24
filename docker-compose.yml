@@ -1,18 +1,45 @@
+# Explicit name avoids "project name must not be empty" when the folder path is non-ASCII.
+# If `docker compose up --build` fails with Buildx gRPC / non-printable ASCII headers, use:
+#   npm run docker:up   or   sh scripts/docker.sh up --build
+# If host ports are busy: `docker compose down` / stop local dev, or override e.g.
+#   HOST_API_PORT=4002 HOST_CLIENT_PORT=5174 npm run docker:up
+# root_node_modules persists across runs; server entrypoint runs `npm ci` when there is
+# no stamp or package-lock.json is newer, so new deps (e.g. lucide-react) sync without `down -v`.
+name: to-lopburi
+
 services:
   server:
     build:
       context: .
       dockerfile: Dockerfile.dev
     working_dir: /app
-    command: sh -c "npm run prisma:generate --workspace server && npm run dev --workspace server"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ ! -f node_modules/.docker-npm-stamp ] || [ package-lock.json -nt node_modules/.docker-npm-stamp ]; then
+          npm ci
+          touch node_modules/.docker-npm-stamp
+        fi
+        npm run prisma:generate --workspace server
+        exec npm run dev --workspace server
     ports:
-      - "4001:4001"
+      - "${HOST_API_PORT:-4001}:4001"
     volumes:
       - .:/app
       - root_node_modules:/app/node_modules
     environment:
       PORT: 4001
-      CLIENT_ORIGIN: http://localhost:5173
+      CLIENT_ORIGIN: http://localhost:${HOST_CLIENT_PORT:-5173}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4001)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 240s
 
   client:
     build:
@@ -21,14 +48,15 @@ services:
     working_dir: /app
     command: sh -c "npm run dev --workspace client -- --host 0.0.0.0 --port 5173"
     ports:
-      - "5173:5173"
+      - "${HOST_CLIENT_PORT:-5173}:5173"
     volumes:
       - .:/app
       - root_node_modules:/app/node_modules
     environment:
       VITE_PROXY_TARGET: http://server:4001
     depends_on:
-      - server
+      server:
+        condition: service_healthy
 
 volumes:
   root_node_modules:

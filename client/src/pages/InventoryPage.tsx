@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { CheckCircle2, Clock, Package, PlusCircle, Receipt } from "lucide-react";
 import { api } from "../lib/api";
 import type { InventoryMovement, InventorySummaryItem, ProductItem } from "../types";
 
@@ -144,7 +145,10 @@ export default function InventoryPage() {
   return (
     <main className="owrap">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <div style={{ fontFamily: "Prompt", fontSize: 17, fontWeight: 700, color: "var(--dark)" }}>📦 คลังสินค้า</div>
+        <div className="h-with-icon" style={{ fontFamily: "Prompt", fontSize: 17, fontWeight: 700, color: "var(--dark)" }}>
+          <Package size={22} strokeWidth={2} aria-hidden />
+          คลังสินค้า
+        </div>
       </div>
 
       {loading ? (
@@ -169,13 +173,17 @@ export default function InventoryPage() {
 
           <section className="card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <h3 style={{ margin: 0 }}>🧾 จัดการสินค้า (CRUD)</h3>
+              <h3 className="h-with-icon" style={{ margin: 0 }}>
+                <Receipt size={20} strokeWidth={2} aria-hidden />
+                จัดการสินค้า (CRUD)
+              </h3>
               <button
                 type="button"
-                className="btnok"
+                className="btnok btnok--fit"
                 onClick={() => setIsProductModalOpen(true)}
               >
-                ➕ เพิ่มสินค้า
+                <PlusCircle size={18} strokeWidth={2} aria-hidden />
+                เพิ่มสินค้า
               </button>
             </div>
 
@@ -220,7 +228,10 @@ export default function InventoryPage() {
                 style={{ width: "min(560px, 100%)", margin: 0 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <h3 style={{ margin: 0 }}>➕ เพิ่มสินค้าใหม่</h3>
+                  <h3 className="h-with-icon" style={{ margin: 0 }}>
+                    <PlusCircle size={20} strokeWidth={2} aria-hidden />
+                    เพิ่มสินค้าใหม่
+                  </h3>
                   <button
                     type="button"
                     className="btndel"
@@ -264,14 +275,20 @@ export default function InventoryPage() {
                   <button type="button" className="btnwarn" onClick={() => setIsProductModalOpen(false)}>
                     ยกเลิก
                   </button>
-                  <button className="btnok" type="submit">บันทึกสินค้า</button>
+                  <button className="btnok btnok--fit" type="submit">
+                    <CheckCircle2 size={18} strokeWidth={2} aria-hidden />
+                    บันทึกสินค้า
+                  </button>
                 </div>
               </form>
             </div>
           )}
 
           <form className="card" onSubmit={handleSubmit}>
-            <h3>➕ รับสินค้าเข้าคลัง</h3>
+            <h3 className="h-with-icon">
+              <PlusCircle size={20} strokeWidth={2} aria-hidden />
+              รับสินค้าเข้าคลัง
+            </h3>
             <div className="frow">
               <div className="fg">
                 <label>ประเภทสินค้า</label>
@@ -293,7 +310,10 @@ export default function InventoryPage() {
                 <input type="text" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
               </div>
             </div>
-            <button className="btnok" type="submit" disabled={!form.type}>✅ บันทึกรับเข้า</button>
+            <button className="btnok" type="submit" disabled={!form.type}>
+              <CheckCircle2 size={18} strokeWidth={2} aria-hidden />
+              บันทึกรับเข้า
+            </button>
             {products.length === 0 && (
               <p style={{ marginTop: 10, fontSize: 12, color: "var(--gray)" }}>
                 Note: Inventory tracking models are not yet implemented. This page shows available products for reference.
@@ -302,7 +322,10 @@ export default function InventoryPage() {
           </form>
 
           <section className="card">
-            <h3>🕐 ประวัติการรับ/ขาย</h3>
+            <h3 className="h-with-icon">
+              <Clock size={20} strokeWidth={2} aria-hidden />
+              ประวัติการรับ/ขาย
+            </h3>
             {movements.length === 0 ? (
               <div className="empty"><p>ยังไม่มีรายการ</p></div>
             ) : (

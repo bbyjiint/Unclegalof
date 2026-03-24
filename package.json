@@ -10,11 +10,14 @@
     "dev": "npm run dev --workspace client & npm run dev --workspace server",
     "dev:client": "npm run dev --workspace client",
     "dev:server": "npm run dev --workspace server",
-    "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down",
+    "docker:up": "sh scripts/docker.sh up --build",
+    "docker:down": "sh scripts/docker.sh down",
     "build": "npm run build --workspace client && npm run build --workspace server",
     "prisma:generate": "npm run prisma:generate --workspace server",
     "prisma:migrate": "npm run prisma:migrate --workspace server",
     "prisma:studio": "npm run prisma:studio --workspace server"
+  },
+  "dependencies": {
+    "lucide-react": "^0.577.0"
   }
 }
