@@ -1,6 +1,3 @@
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
-
 -- CreateEnum
 CREATE TYPE "UserRole" AS ENUM ('OWNER', 'ADMIN', 'STAFF', 'INVENTORY', 'DELIVERY');
 
@@ -305,4 +302,3 @@ ALTER TABLE "InventoryMovement" ADD CONSTRAINT "InventoryMovement_createdByUserI
 
 -- AddForeignKey
 ALTER TABLE "PipelineItem" ADD CONSTRAINT "PipelineItem_deskItemId_fkey" FOREIGN KEY ("deskItemId") REFERENCES "DeskItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
