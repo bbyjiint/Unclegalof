@@ -1,20 +1,30 @@
 import type { PropsWithChildren } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Armchair, Package, Shield, User, Wrench } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import { canAccessRoute } from "../lib/roleRoutes";
+
+const FULLSCREEN_AUTH_PATHS = new Set(["/", "/login", "/signup"]);
 
 const navItems: { to: string; label: string; Icon: LucideIcon }[] = [
   { to: "/staff", label: "พนักงาน", Icon: User },
   { to: "/inventory", label: "คลัง", Icon: Package },
   { to: "/repair", label: "ซ่อม/เคลม", Icon: Wrench },
-  { to: "/owner", label: "เจ้าของ", Icon: Shield }
+  { to: "/owner", label: "เจ้าของ", Icon: Shield },
 ];
 
 export default function AppShell({ children }: PropsWithChildren) {
+  const { pathname } = useLocation();
   const { user, logout } = useAuth();
-  const visibleNavItems = navItems.filter((item) => !user || canAccessRoute(user.role, item.to));
+  const visibleNavItems = navItems.filter(
+    (item) => !user || canAccessRoute(user.role, item.to),
+  );
+  const fullscreenAuth = FULLSCREEN_AUTH_PATHS.has(pathname);
+
+  if (fullscreenAuth) {
+    return <>{children}</>;
+  }
 
   return (
     <>

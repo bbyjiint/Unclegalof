@@ -1,6 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../components/AuthProvider";
+import { AuthHeroShell } from "../components/auth/AuthHeroShell";
+import {
+  IconBadgeOutline,
+  IconEnvelopeOutline,
+  IconLockOutline,
+  IconPhoneOutline,
+} from "../components/auth/AuthIcons";
 import { api } from "../lib/api";
 import { getDefaultRouteForRole } from "../lib/roleRoutes";
 
@@ -40,7 +47,7 @@ export default function SignupPage() {
     setError(null);
 
     if (!name || !email || !password) {
-      setError("Please fill all fields.");
+      setError("กรุณากรอกชื่อ อีเมล และรหัสผ่านให้ครบ");
       return;
     }
 
@@ -55,118 +62,162 @@ export default function SignupPage() {
       });
       navigate(getDefaultRouteForRole(user.role));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Signup failed");
+      setError(err instanceof Error ? err.message : "สมัครสมาชิกไม่สำเร็จ");
     } finally {
       setSubmitting(false);
     }
   }
 
+  const fieldError = Boolean(error);
+  const formBusy = submitting || loadingSignupOptions;
+
   return (
-    <main className="landing">
-      <section className="card" style={{ maxWidth: 420, margin: "32px auto" }}>
-        <h3>Sign up</h3>
-        <p style={{ marginBottom: 16 }}>
-          {allowOwnerSignup
-            ? "Create the first account. Owner access is only available during initial setup."
-            : "Create a staff account to sign in to the system."}
-        </p>
+    <AuthHeroShell wide>
+      <p className="auth-hero-brand">โต๊ะลพบุรี</p>
+      <h1 className="auth-hero-page-title">สมัครสมาชิก</h1>
+      <p className="auth-hero-page-desc">
+        {allowOwnerSignup
+          ? "สร้างบัญชีแรกของระบบ — สิทธิ์เจ้าของเปิดได้เฉพาะช่วงตั้งค่าเริ่มต้นเท่านั้น"
+          : "สร้างบัญชีพนักงานเพื่อเข้าใช้งานระบบ"}
+      </p>
 
-        <form onSubmit={handleSubmit} className="form" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span>Name</span>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Full name"
-              required
-            />
+      <form className="auth-hero-form auth-hero-form--compact" onSubmit={handleSubmit} noValidate>
+        <div className={`auth-line-field${fieldError ? " auth-line-field--error" : ""}`}>
+          <span className="auth-line-field__icon">
+            <IconBadgeOutline size={22} />
+          </span>
+          <label className="sr-only" htmlFor="signup-name">
+            ชื่อ–นามสกุล
           </label>
+          <input
+            id="signup-name"
+            className="auth-line-input"
+            type="text"
+            name="name"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="FULL NAME"
+            disabled={formBusy}
+            aria-invalid={fieldError}
+          />
+        </div>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span>Email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-            />
+        <div className={`auth-line-field${fieldError ? " auth-line-field--error" : ""}`}>
+          <span className="auth-line-field__icon">
+            <IconEnvelopeOutline size={22} />
+          </span>
+          <label className="sr-only" htmlFor="signup-email">
+            อีเมล
           </label>
+          <input
+            id="signup-email"
+            className="auth-line-input"
+            type="email"
+            name="email"
+            autoComplete="email"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="EMAIL"
+            disabled={formBusy}
+            aria-invalid={fieldError}
+          />
+        </div>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span>Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
+        <div className={`auth-line-field${fieldError ? " auth-line-field--error" : ""}`}>
+          <span className="auth-line-field__icon">
+            <IconLockOutline size={22} />
+          </span>
+          <label className="sr-only" htmlFor="signup-password">
+            รหัสผ่าน
           </label>
+          <input
+            id="signup-password"
+            className="auth-line-input"
+            type="password"
+            name="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="PASSWORD"
+            disabled={formBusy}
+            aria-invalid={fieldError}
+          />
+        </div>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span>Phone (optional)</span>
-            <input
-              type="text"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="08x-xxx-xxxx"
-            />
+        <div className="auth-line-field">
+          <span className="auth-line-field__icon">
+            <IconPhoneOutline size={22} />
+          </span>
+          <label className="sr-only" htmlFor="signup-phone">
+            เบอร์โทร (ไม่บังคับ)
           </label>
+          <input
+            id="signup-phone"
+            className="auth-line-input"
+            type="tel"
+            name="phone"
+            autoComplete="tel"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="PHONE (OPTIONAL)"
+            disabled={formBusy}
+          />
+        </div>
 
-          {allowOwnerSignup && (
-            <fieldset style={{ border: "none", padding: 0, margin: "8px 0 0 0" }}>
-              <legend style={{ marginBottom: 4 }}>Role</legend>
-              <div style={{ display: "flex", gap: 12 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <input
-                    type="radio"
-                    name="role"
-                    value="employee"
-                    checked={role === "employee"}
-                    onChange={() => setRole("employee")}
-                  />
-                  Employee
-                </label>
-                <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <input
-                    type="radio"
-                    name="role"
-                    value="owner"
-                    checked={role === "owner"}
-                    onChange={() => setRole("owner")}
-                  />
-                  Owner
-                </label>
-              </div>
-            </fieldset>
-          )}
+        {allowOwnerSignup ? (
+          <fieldset className="auth-role-fieldset">
+            <legend className="auth-role-legend">บทบาท</legend>
+            <div className="auth-role-row">
+              <label className="auth-role-option">
+                <input
+                  type="radio"
+                  name="role"
+                  value="employee"
+                  checked={role === "employee"}
+                  onChange={() => setRole("employee")}
+                  disabled={formBusy}
+                />
+                <span>พนักงาน</span>
+              </label>
+              <label className="auth-role-option">
+                <input
+                  type="radio"
+                  name="role"
+                  value="owner"
+                  checked={role === "owner"}
+                  onChange={() => setRole("owner")}
+                  disabled={formBusy}
+                />
+                <span>เจ้าของ</span>
+              </label>
+            </div>
+          </fieldset>
+        ) : null}
 
-          {error && (
-            <p style={{ color: "var(--red)", fontSize: 12, marginTop: 4 }}>
-              {error}
-            </p>
-          )}
+        {error ? (
+          <div className="auth-hero-alert" role="alert">
+            {error}
+          </div>
+        ) : null}
 
-          <button
-            type="submit"
-            className="vbtn"
-            style={{ marginTop: 8 }}
-            disabled={submitting || loadingSignupOptions}
-          >
-            {loadingSignupOptions ? "Loading..." : submitting ? "Creating account..." : "Create account"}
-          </button>
-        </form>
+        <button type="submit" className="auth-hero-submit" disabled={formBusy}>
+          {loadingSignupOptions
+            ? "กำลังโหลด…"
+            : submitting
+              ? "กำลังสร้างบัญชี…"
+              : "สร้างบัญชี"}
+        </button>
+      </form>
 
-        <p style={{ marginTop: 16, fontSize: 12 }}>
-          Already have an account?{" "}
-          <Link to="/login">
-            Login
-          </Link>
-        </p>
-      </section>
-    </main>
+      <p className="auth-hero-signup auth-hero-signup--tight">
+        มีบัญชีแล้ว?{" "}
+        <Link className="auth-hero-signup-link" to="/login">
+          เข้าสู่ระบบ
+        </Link>
+      </p>
+    </AuthHeroShell>
   );
 }
-

@@ -152,6 +152,312 @@ div.h-with-icon {
   padding: 20px 14px;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* —— Login hero (full-viewport stack on public auth routes) —— */
+.auth-hero {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(28px, env(safe-area-inset-top, 0px) + 16px) 20px
+    max(32px, env(safe-area-inset-bottom, 0px) + 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: #fff;
+  background-color: #122018;
+  background-image:
+    radial-gradient(ellipse 90% 70% at 15% 20%, rgba(45, 122, 79, 0.45), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 95% 35%, rgba(26, 46, 31, 0.95), transparent 50%),
+    radial-gradient(ellipse 110% 60% at 50% 110%, rgba(30, 80, 52, 0.55), transparent 45%),
+    linear-gradient(168deg, #0f1f16 0%, var(--dark) 38%, #1a4a32 92%);
+}
+
+.auth-hero-decor {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 1;
+}
+
+.auth-hero-waves {
+  position: absolute;
+  width: 140%;
+  min-width: 900px;
+  height: 100%;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.auth-hero-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.auth-hero-brand {
+  font-family: "Prompt", sans-serif;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.92);
+  margin-bottom: 32px;
+}
+
+.auth-hero-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.auth-line-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 3px;
+  background: transparent;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.auth-line-field:focus-within {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.auth-line-field--error {
+  border-color: rgba(255, 160, 160, 0.85);
+}
+
+.auth-line-field__icon {
+  flex-shrink: 0;
+  display: flex;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.auth-line-input {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 0;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+.auth-line-input::placeholder {
+  color: rgba(255, 255, 255, 0.48);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.auth-line-input:focus {
+  outline: none;
+}
+
+.auth-line-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.auth-hero-alert {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #ffe8e8;
+  background: rgba(180, 40, 40, 0.35);
+  border: 1px solid rgba(255, 150, 150, 0.35);
+}
+
+.auth-hero-submit {
+  width: 100%;
+  margin-top: 6px;
+  padding: 15px 20px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: "Prompt", sans-serif;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--green);
+  background: #fff;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.auth-hero-submit:hover:not(:disabled) {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  transform: translateY(-1px);
+}
+
+.auth-hero-submit:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.auth-hero-submit:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.auth-hero-forgot {
+  margin-top: 22px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.88);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.auth-hero-forgot:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-hero-signup {
+  margin-top: 28px;
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.auth-hero-signup-link {
+  color: var(--gold-light);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.auth-hero-signup-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-hero-inner--wide {
+  max-width: 440px;
+}
+
+.auth-hero-page-title {
+  font-family: "Prompt", sans-serif;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.auth-hero-page-desc {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.62);
+  margin-bottom: 26px;
+  max-width: 38ch;
+}
+
+.auth-hero-form--compact {
+  gap: 14px;
+}
+
+.auth-role-fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  text-align: left;
+}
+
+.auth-role-legend {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 10px;
+  padding: 0;
+}
+
+.auth-role-row {
+  display: flex;
+  gap: 10px;
+}
+
+.auth-role-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.auth-role-option:has(:checked) {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.auth-role-option input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #fff;
+  flex-shrink: 0;
+}
+
+.auth-role-option:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.auth-hero-signup--tight {
+  margin-top: 22px;
+}
+
 .landing {
   max-width: 720px;
   margin: 40px auto;
@@ -746,5 +1052,14 @@ th {
 
   .header {
     display: flex;
+  }
+
+  .auth-hero {
+    padding: max(20px, env(safe-area-inset-top, 0px) + 12px) 16px
+      max(28px, env(safe-area-inset-bottom, 0px) + 12px);
+  }
+
+  .auth-hero-brand {
+    margin-bottom: 26px;
   }
 }

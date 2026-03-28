@@ -1,6 +1,8 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../components/AuthProvider";
+import { AuthHeroShell } from "../components/auth/AuthHeroShell";
+import { IconLockOutline, IconUserOutline } from "../components/auth/AuthIcons";
 import { getDefaultRouteForRole } from "../lib/roleRoutes";
 
 export default function LoginPage() {
@@ -17,7 +19,7 @@ export default function LoginPage() {
     setError(null);
 
     if (!email || !password) {
-      setError("Please enter email and password.");
+      setError("กรุณากรอกอีเมลและรหัสผ่าน");
       return;
     }
 
@@ -26,60 +28,95 @@ export default function LoginPage() {
       const user = await login({ email, password });
       navigate(getDefaultRouteForRole(user.role));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "เข้าสู่ระบบไม่สำเร็จ");
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <main className="landing">
-      <section className="card" style={{ maxWidth: 420, margin: "32px auto" }}>
-        <h3>Login</h3>
-        <p style={{ marginBottom: 16 }}>Sign in with your real account to continue.</p>
+    <AuthHeroShell>
+      <p className="auth-hero-brand">โต๊ะลพบุรี</p>
 
-        <form onSubmit={handleSubmit} className="form" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span>Email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-            />
+      <h1 className="sr-only">เข้าสู่ระบบ</h1>
+
+      <form className="auth-hero-form" onSubmit={handleSubmit} noValidate>
+        <div
+          className={`auth-line-field${error ? " auth-line-field--error" : ""}`}
+        >
+          <span className="auth-line-field__icon">
+            <IconUserOutline size={22} />
+          </span>
+          <label className="sr-only" htmlFor="login-email">
+            อีเมล
           </label>
+          <input
+            id="login-email"
+            className="auth-line-input"
+            type="email"
+            name="email"
+            autoComplete="email"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="EMAIL"
+            disabled={submitting}
+            aria-invalid={Boolean(error)}
+          />
+        </div>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span>Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
+        <div
+          className={`auth-line-field${error ? " auth-line-field--error" : ""}`}
+        >
+          <span className="auth-line-field__icon">
+            <IconLockOutline size={22} />
+          </span>
+          <label className="sr-only" htmlFor="login-password">
+            รหัสผ่าน
           </label>
+          <input
+            id="login-password"
+            className="auth-line-input"
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="PASSWORD"
+            disabled={submitting}
+            aria-invalid={Boolean(error)}
+          />
+        </div>
 
-          {error && (
-            <p style={{ color: "var(--red)", fontSize: 12, marginTop: 4 }}>
-              {error}
-            </p>
-          )}
+        {error ? (
+          <div className="auth-hero-alert" role="alert">
+            {error}
+          </div>
+        ) : null}
 
-          <button type="submit" className="vbtn" style={{ marginTop: 8 }} disabled={submitting}>
-            {submitting ? "Logging in..." : "Login"}
-          </button>
-        </form>
+        <button
+          type="submit"
+          className="auth-hero-submit"
+          disabled={submitting}
+        >
+          {submitting ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}
+        </button>
+      </form>
 
-        <p style={{ marginTop: 16, fontSize: 12 }}>
-          Don&apos;t have an account?{" "}
-          <Link to="/signup">
-            Sign up
-          </Link>
-        </p>
-      </section>
-    </main>
+      <button
+        type="button"
+        className="auth-hero-forgot"
+        title="ติดต่อผู้ดูแลระบบเพื่อรีเซ็ตรหัสผ่าน"
+      >
+        ลืมรหัสผ่าน?
+      </button>
+
+      <p className="auth-hero-signup">
+        ยังไม่มีบัญชี?{" "}
+        <Link className="auth-hero-signup-link" to="/signup">
+          สมัครสมาชิก
+        </Link>
+      </p>
+    </AuthHeroShell>
   );
 }
-

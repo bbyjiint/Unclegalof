@@ -5,9 +5,29 @@
 #   HOST_API_PORT=4002 HOST_CLIENT_PORT=5174 npm run docker:up
 # root_node_modules persists across runs; server entrypoint runs `npm ci` when there is
 # no stamp or package-lock.json is newer, so new deps (e.g. lucide-react) sync without `down -v`.
+#
+# Postgres runs in the `db` service; the API uses DATABASE_URL pointing at hostname `db`.
+# Override host DB port if 5433 is taken: HOST_DB_PORT=5434 docker compose up
 name: to-lopburi
 
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tolopburi
+      POSTGRES_PASSWORD: tolopburi_dev
+      POSTGRES_DB: tolopburi
+    ports:
+      - "${HOST_DB_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tolopburi -d tolopburi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   server:
     build:
       context: .
@@ -23,6 +43,7 @@ services:
           touch node_modules/.docker-npm-stamp
         fi
         npm run prisma:generate --workspace server
+        npm run prisma:migrate:deploy --workspace server
         exec npm run dev --workspace server
     ports:
       - "${HOST_API_PORT:-4001}:4001"
@@ -32,6 +53,12 @@ services:
     environment:
       PORT: 4001
       CLIENT_ORIGIN: http://localhost:${HOST_CLIENT_PORT:-5173}
+      DATABASE_URL: postgresql://tolopburi:tolopburi_dev@db:5432/tolopburi
+      DIRECT_URL: postgresql://tolopburi:tolopburi_dev@db:5432/tolopburi
+      JWT_SECRET: ${JWT_SECRET:-docker-dev-change-me-to-a-long-random-secret-min-32-chars}
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       test:
         - CMD-SHELL
@@ -60,3 +87,4 @@ services:
 
 volumes:
   root_node_modules:
+  pgdata:
