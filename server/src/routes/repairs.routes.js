@@ -5,19 +5,76 @@ import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireStaff } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
-import { repairRecordToRepairItem, repairPayloadToRepairRecord } from "../lib/adapters.js";
+import { repairRecordToRepairItem } from "../lib/adapters.js";
+
+function coerceRepairImages(value) {
+  if (Array.isArray(value) && value.every((x) => typeof x === "string")) {
+    return value;
+  }
+  return [];
+}
+
+/** Prisma table name for RepairRecord (matches schema, no @@map). */
+const REPAIR_TABLE = "RepairRecord";
+
+/**
+ * Read/write `images` via raw SQL so it still works if @prisma/client was
+ * generated before the `images` column existed (avoids Unknown argument `images`).
+ */
+async function getRepairRecordImagesFromDb(id) {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT images FROM "${REPAIR_TABLE}" WHERE id = $1::uuid`,
+    id
+  );
+  const raw = rows[0]?.images;
+  if (raw == null) {
+    return [];
+  }
+  if (Array.isArray(raw) && raw.every((x) => typeof x === "string")) {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.every((x) => typeof x === "string") ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function setRepairRecordImagesInDb(id, imageStrings) {
+  await prisma.$executeRawUnsafe(
+    `UPDATE "${REPAIR_TABLE}" SET images = $1::jsonb WHERE id = $2::uuid`,
+    JSON.stringify(imageStrings),
+    id
+  );
+}
+
+function mergeRepairRowWithImages(row, images) {
+  return row ? { ...row, images: coerceRepairImages(images) } : row;
+}
 
 const router = Router();
+
+const MAX_REPAIR_IMAGES = 8;
 
 // Frontend repair schema
 const frontendRepairSchema = z.object({
   type: z.string().min(1), // Product type name
   qty: z.number().int().positive(),
-  size: z.string().min(1),
-  color: z.string().min(1),
-  reason: z.string().min(1),
+  // Optional in UI — empty string is stored as null in DB
+  size: z.string().max(500).optional().default(""),
+  color: z.string().max(500).optional().default(""),
+  reason: z.string().min(1).max(5000),
   kind: z.enum(["repair", "claim"]),
   date: z.string().min(1),
+  images: z.array(z.string().min(1)).max(MAX_REPAIR_IMAGES).optional().default([]),
+});
+
+const appendRepairImageSchema = z.object({
+  imageData: z.string().min(1),
 });
 
 const updateRepairStatusSchema = z.object({
@@ -42,10 +99,14 @@ router.get(
         },
         orderBy: { createdAt: "desc" },
       });
-      
-      // Transform to frontend format
-      const items = repairRecords.map((repair, index) => repairRecordToRepairItem(repair, index));
-      
+
+      const items = await Promise.all(
+        repairRecords.map(async (repair, index) => {
+          const imgs = await getRepairRecordImagesFromDb(repair.id);
+          return repairRecordToRepairItem(mergeRepairRowWithImages(repair, imgs), index);
+        })
+      );
+
       res.json({ items });
     } catch (error) {
       next(error);
@@ -74,33 +135,46 @@ router.post(
       if (!deskItem) {
         return res.status(404).json({ error: `Desk item "${payload.type}" not found. Please create it first in catalog.` });
       }
-      
-      // Transform frontend payload to database format
-      const repairRecordData = repairPayloadToRepairRecord(
-        payload,
-        deskItem.id,
-        req.user.id
-      );
-      
+
+      const images = coerceRepairImages(payload.images);
+      const sizeTrim = String(payload.size ?? "").trim();
+      const colorTrim = String(payload.color ?? "").trim();
+
+      // Never pass `images` into prisma.create — stale generated clients throw
+      // Unknown argument `images`. Persist photos via raw SQL instead.
+      const data = {
+        deskItemId: deskItem.id,
+        reportedBy: req.user.id,
+        reportDate: new Date(payload.date),
+        quantity: payload.qty,
+        size: sizeTrim.length > 0 ? sizeTrim : null,
+        color: colorTrim.length > 0 ? colorTrim : null,
+        description: String(payload.reason).trim(),
+        kind: payload.kind,
+        status: "open",
+        amount: 0,
+      };
+
       const repairRecord = await prisma.repairRecord.create({
-        data: repairRecordData,
+        data,
         include: {
           deskItem: true,
           reporter: true,
         },
       });
-      
-      // Transform to frontend format
-      const items = await prisma.repairRecord.findMany({
-        include: {
-          deskItem: true,
-          reporter: true,
-        },
-        orderBy: { createdAt: "desc" },
-      });
-      
-      const item = repairRecordToRepairItem(repairRecord, items.findIndex(r => r.id === repairRecord.id));
-      
+
+      if (images.length > 0) {
+        await setRepairRecordImagesInDb(repairRecord.id, images);
+      }
+
+      const storedImages =
+        images.length > 0 ? images : await getRepairRecordImagesFromDb(repairRecord.id);
+
+      const item = repairRecordToRepairItem(
+        mergeRepairRowWithImages(repairRecord, storedImages),
+        0
+      );
+
       res.status(201).json(item);
     } catch (error) {
       next(error);
@@ -108,8 +182,47 @@ router.post(
   }
 );
 
+// PATCH /api/repairs/:id/images - Append one photo (base64 data URL)
+router.patch(
+  "/:id/images",
+  authenticate,
+  requireStaff,
+  writeRateLimiter,
+  validate(paramsIdSchema, "params"),
+  validate(appendRepairImageSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { imageData } = req.body;
+
+      const repair = await prisma.repairRecord.findUnique({
+        where: { id },
+        include: {
+          deskItem: true,
+          reporter: true,
+        },
+      });
+
+      if (!repair) {
+        return res.status(404).json({ error: "Repair record not found" });
+      }
+
+      const current = await getRepairRecordImagesFromDb(id);
+      if (current.length >= MAX_REPAIR_IMAGES) {
+        return res.status(400).json({ error: `สูงสุด ${MAX_REPAIR_IMAGES} รูปต่อรายการ` });
+      }
+
+      const nextImages = [...current, imageData];
+      await setRepairRecordImagesInDb(id, nextImages);
+
+      res.json(repairRecordToRepairItem(mergeRepairRowWithImages(repair, nextImages)));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // PATCH /api/repairs/:id/status - Update repair status
-// Note: Status field doesn't exist in schema - this will need schema update
 router.patch(
   "/:id/status",
   authenticate,

@@ -42,13 +42,18 @@ const defaultDeliveryFees = [
   { range: 20, cost: 2500 },
 ];
 
+const defaultPromotions = [
+  { name: "ส่วนลดเปิดร้าน 100 บาท", amountType: "fixed", amount: 100, isActive: true },
+  { name: "ส่วนลดหน้าร้าน 5%", amountType: "percent", amount: 5, isActive: true },
+];
+
 // Registration schema
 const registerSchema = z.object({
   fullName: z.string().min(1).max(100),
   email: z.string().email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
   phone: z.string().optional(),
-  role: z.enum([UserRole.OWNER, UserRole.STAFF]),
+  role: z.enum([UserRole.OWNER, UserRole.STAFF]).optional().default(UserRole.STAFF),
 });
 
 // Login schema
@@ -58,9 +63,10 @@ const loginSchema = z.object({
 });
 
 async function ensureDefaultData() {
-  const [deskItemCount, deliveryFeeCount] = await Promise.all([
+  const [deskItemCount, deliveryFeeCount, promotionCount] = await Promise.all([
     prisma.deskItem.count(),
     prisma.deliveryFee.count(),
+    prisma.promotion.count(),
   ]);
 
   if (deskItemCount === 0) {
@@ -74,7 +80,34 @@ async function ensureDefaultData() {
       data: defaultDeliveryFees,
     });
   }
+
+  if (promotionCount === 0) {
+    await prisma.promotion.createMany({
+      data: defaultPromotions,
+    });
+  }
 }
+
+async function getBootstrapStatus() {
+  const userCount = await prisma.user.count();
+
+  return {
+    allowOwnerSignup: userCount === 0,
+  };
+}
+
+/**
+ * GET /api/auth/bootstrap-status
+ * Returns whether the first public owner account is still available
+ */
+router.get("/bootstrap-status", async (_req, res, next) => {
+  try {
+    const status = await getBootstrapStatus();
+    res.json(status);
+  } catch (error) {
+    next(error);
+  }
+});
 
 /**
  * POST /api/auth/register
@@ -97,8 +130,17 @@ router.post(
         return res.status(409).json({ error: "User with this email already exists" });
       }
 
+      const { allowOwnerSignup } = await getBootstrapStatus();
+
+      if (role === UserRole.OWNER && !allowOwnerSignup) {
+        return res.status(403).json({
+          error: "Owner signup is only available for the very first account. Please sign up as staff instead.",
+        });
+      }
+
       // Hash password
       const passwordHash = await hashPassword(password);
+      const assignedRole = role === UserRole.OWNER && allowOwnerSignup ? UserRole.OWNER : UserRole.STAFF;
 
       const user = await prisma.user.create({
         data: {
@@ -106,7 +148,7 @@ router.post(
           email,
           passwordHash,
           phone,
-          role,
+          role: assignedRole,
         },
       });
 

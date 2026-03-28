@@ -6,15 +6,31 @@ import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { promotionToFrontend } from "../lib/adapters.js";
+import {
+  createPromotionWithAmountType,
+  findAllPromotionsRows,
+  findPromotionRowById,
+} from "../lib/promotions.db.js";
 
 const router = Router();
 
 // Frontend promotion schema
-const frontendPromotionSchema = z.object({
-  name: z.string().min(1).max(200),
-  amount: z.number().int().nonnegative(),
-  active: z.boolean().optional().default(true),
-});
+const frontendPromotionSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    amountType: z.enum(["fixed", "percent"]).optional().default("fixed"),
+    amount: z.number().int().nonnegative(),
+    active: z.boolean().optional().default(true),
+  })
+  .superRefine((data, ctx) => {
+    if (data.amountType === "percent" && data.amount > 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Percent discount cannot exceed 100",
+        path: ["amount"],
+      });
+    }
+  });
 
 const updatePromotionSchema = z.object({
   active: z.boolean(),
@@ -30,12 +46,8 @@ router.get(
   authenticate,
   async (req, res, next) => {
     try {
-      const promotions = await prisma.promotion.findMany({
-        orderBy: { createdAt: "desc" },
-      });
-      
-      // Transform to frontend format
-      const items = promotions.map((promo, index) => promotionToFrontend(promo, index));
+      const rows = await findAllPromotionsRows();
+      const items = rows.map((promo, index) => promotionToFrontend(promo, index));
       
       res.json({ items });
     } catch (error) {
@@ -64,17 +76,8 @@ router.post(
         return res.status(409).json({ error: "Promotion with this name already exists" });
       }
       
-      const promotion = await prisma.promotion.create({
-        data: {
-          name: payload.name,
-          amount: payload.amount,
-          isActive: payload.active,
-        },
-      });
-      
-      // Transform to frontend format
-      const item = promotionToFrontend(promotion);
-      
+      const row = await createPromotionWithAmountType(payload);
+      const item = promotionToFrontend(row);
       res.status(201).json(item);
     } catch (error) {
       next(error);
@@ -103,14 +106,15 @@ router.patch(
         return res.status(404).json({ error: "Promotion not found" });
       }
 
-      const updatedPromotion = await prisma.promotion.update({
+      await prisma.promotion.update({
         where: { id },
         data: {
           isActive: payload.active,
         },
       });
 
-      const item = promotionToFrontend(updatedPromotion);
+      const row = await findPromotionRowById(id);
+      const item = promotionToFrontend(row);
       
       res.json(item);
     } catch (error) {

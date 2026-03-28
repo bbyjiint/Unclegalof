@@ -2,6 +2,9 @@
  * Adapter functions to transform between frontend format and database format
  */
 
+const VALID_SALE_STATUSES = new Set(["paid", "pending", "deposit"]);
+const VALID_DELIVERY_METHODS = new Set(["selfpickup", "delivery"]);
+
 /**
  * Convert database SaleRecord to frontend Sale format
  */
@@ -12,6 +15,9 @@ export function saleRecordToSale(saleRecord, sequence = null) {
     saleRecord.orderNumber ||
     (sequence !== null ? `SO-${String(sequence + 1).padStart(4, "0")}` : `SO-${saleRecord.id.substring(0, 8).toUpperCase()}`);
 
+  const payStatus = VALID_SALE_STATUSES.has(saleRecord.status) ? saleRecord.status : "pending";
+  const delivery = VALID_DELIVERY_METHODS.has(saleRecord.deliveryType) ? saleRecord.deliveryType : "selfpickup";
+
   return {
     id: saleRecord.id,
     orderNumber,
@@ -19,10 +25,12 @@ export function saleRecordToSale(saleRecord, sequence = null) {
     qty: saleRecord.quantity ?? 1,
     price: saleRecord.unitPrice ?? saleRecord.amount,
     grandTotal: saleRecord.amount,
-    payStatus: saleRecord.status === "paid" ? "paid" : saleRecord.status === "pending" ? "pending" : "deposit",
-    delivery: saleRecord.deliveryType === "delivery" ? "delivery" : "self",
+    payStatus,
+    delivery,
     date: (saleRecord.saleDate || saleRecord.createdAt)?.toISOString().split("T")[0] || new Date().toISOString().split("T")[0],
     note: saleRecord.remarks || null,
+    customerName: saleRecord.customerName || null,
+    deliveryAddress: saleRecord.deliveryAddress || null,
     paymentSlipImage: saleRecord.paymentSlipImage || null,
     paidAt: saleRecord.paidAt?.toISOString() || null,
   };
@@ -36,6 +44,9 @@ export function salePayloadToSaleRecord(payload, deskItemId) {
   const unitNet = Math.max(0, (payload.price || 0) - unitDiscount);
   const grandTotal = unitNet * (payload.qty || 1) + (payload.wFee || 0);
 
+  const status = VALID_SALE_STATUSES.has(payload.pay) ? payload.pay : "pending";
+  const deliveryType = VALID_DELIVERY_METHODS.has(payload.delivery) ? payload.delivery : "selfpickup";
+
   return {
     saleDate: new Date(payload.date),
     deskType: deskItemId,
@@ -44,14 +55,15 @@ export function salePayloadToSaleRecord(payload, deskItemId) {
     promoDiscount: payload.discount || 0,
     manualDiscount: payload.manualDisc || 0,
     manualDiscountReason: payload.manualReason || null,
-    status: payload.pay || "pending",
+    status,
     appliedPromotion: payload.promoId || null,
     amount: grandTotal,
-    deliveryType: payload.delivery || "self",
-    deliveryRange: payload.delivery === "delivery" && payload.km ? getDeliveryRangeFromKm(payload.km) : null,
+    deliveryType,
+    deliveryRange: deliveryType === "delivery" && payload.km ? getDeliveryRangeFromKm(payload.km) : null,
     workerFee: payload.wFee || 0,
     workerFeeType: payload.wType || null,
     customerName: payload.addr || null,
+    deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
     remarks: payload.note || null,
   };
 }
@@ -111,6 +123,7 @@ export function promotionToFrontend(promotion, index = null) {
   return {
     id: promotion.id,
     name: promotion.name,
+    amountType: promotion.amountType === "percent" ? "percent" : "fixed",
     amount: promotion.amount ?? 0,
     active: promotion.isActive ?? true,
     createdAt: promotion.createdAt?.toISOString(),
@@ -121,9 +134,16 @@ export function promotionToFrontend(promotion, index = null) {
 /**
  * Convert database RepairRecord to frontend RepairItem format
  */
+function normalizeRepairImages(value) {
+  if (Array.isArray(value) && value.every((x) => typeof x === "string")) {
+    return value;
+  }
+  return [];
+}
+
 export function repairRecordToRepairItem(repairRecord, index = null) {
   const deskItemName = repairRecord.deskItem?.name || repairRecord.deskItemId || "";
-  
+
   return {
     id: repairRecord.id,
     type: deskItemName,
@@ -134,23 +154,7 @@ export function repairRecordToRepairItem(repairRecord, index = null) {
     kind: repairRecord.kind === "claim" ? "claim" : "repair",
     status: repairRecord.status === "inprogress" || repairRecord.status === "done" ? repairRecord.status : "open",
     date: (repairRecord.reportDate || repairRecord.createdAt)?.toISOString().split("T")[0] || new Date().toISOString().split("T")[0],
+    images: normalizeRepairImages(repairRecord.images),
   };
 }
 
-/**
- * Convert frontend Repair payload to database RepairRecord format
- */
-export function repairPayloadToRepairRecord(payload, deskItemId, reportedBy) {
-  return {
-    deskItemId,
-    reportedBy,
-    reportDate: new Date(payload.date),
-    quantity: payload.qty || 1,
-    size: payload.size || null,
-    color: payload.color || null,
-    description: payload.reason || "",
-    kind: payload.kind || "repair",
-    status: "open",
-    amount: 0,
-  };
-}

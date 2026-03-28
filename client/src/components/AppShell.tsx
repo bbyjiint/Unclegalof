@@ -1,26 +1,30 @@
 import type { PropsWithChildren } from "react";
+import type { LucideIcon } from "lucide-react";
+import { Armchair, Package, Shield, User, Wrench } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
+import { canAccessRoute } from "../lib/roleRoutes";
 
-const navItems = [
-  { to: "/staff", label: "👤 พนักงาน" },
-  { to: "/inventory", label: "📦 คลัง" },
-  { to: "/repair", label: "🔧 ซ่อม/เคลม" },
-  { to: "/owner", label: "🔐 เจ้าของ" }
+const navItems: { to: string; label: string; Icon: LucideIcon }[] = [
+  { to: "/staff", label: "พนักงาน", Icon: User },
+  { to: "/inventory", label: "คลัง", Icon: Package },
+  { to: "/repair", label: "ซ่อม/เคลม", Icon: Wrench },
+  { to: "/owner", label: "เจ้าของ", Icon: Shield }
 ];
 
 export default function AppShell({ children }: PropsWithChildren) {
   const { user, logout } = useAuth();
-  const visibleNavItems = navItems.filter((item) => item.to !== "/owner" || user?.role === "OWNER" || user?.role === "ADMIN");
+  const visibleNavItems = navItems.filter((item) => !user || canAccessRoute(user.role, item.to));
 
   return (
     <>
       <header className="header">
         <div className="hlogo">
-          <div className="ico">🪑</div>
+          <div className="ico" aria-hidden>
+            <Armchair size={24} strokeWidth={2} />
+          </div>
           <div>
             <h1>โต๊ะลพบุรี</h1>
-            <p>React + TypeScript + Express + Prisma</p>
           </div>
         </div>
         <nav className="vtoggle">
@@ -32,10 +36,13 @@ export default function AppShell({ children }: PropsWithChildren) {
                   to={item.to}
                   className={({ isActive }) => `vbtn${isActive ? " active" : ""}`}
                 >
-                  {item.label}
+                  <span className="nav-link-inner">
+                    <item.Icon size={18} strokeWidth={2} />
+                    {item.label}
+                  </span>
                 </NavLink>
               ))}
-              <button type="button" className="vbtn" onClick={logout}>
+              <button type="button" className="vbtn vbtn-signout" onClick={logout}>
                 ออกจากระบบ
               </button>
             </>

@@ -1,6 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  ClipboardList,
+  ImagePlus,
+  MapPin,
+  Package,
+  PlusCircle,
+  Save,
+  Truck,
+  Warehouse,
+  Wallet,
+  X
+} from "lucide-react";
+import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { formatMoney, getZoneByKm, DELIVERY_ZONES } from "../data/constants";
 import { api } from "../lib/api";
+import { formatPromoValueLabel, promoUnitDiscountBaht } from "../lib/promotions";
 import type { DeliveryMode, PayStatus, Promotion, Sale } from "../types";
 
 type StaffFormState = {
@@ -16,6 +30,7 @@ type StaffFormState = {
   delivery: DeliveryMode;
   km: number | "";
   addr: string;
+  deliveryAddress: string;
   note: string;
 };
 
@@ -36,9 +51,10 @@ const initialForm = (today: string): StaffFormState => ({
   discount: 0,
   manualDisc: 0,
   manualReason: "",
-  delivery: "self",
+  delivery: "selfpickup",
   km: "",
   addr: "",
+  deliveryAddress: "",
   note: ""
 });
 
@@ -50,7 +66,8 @@ export default function StaffPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [uploadingSaleId, setUploadingSaleId] = useState<string | null>(null);
-  const [updatingSaleId, setUpdatingSaleId] = useState<string | null>(null);
+  const [slipPreviewSrc, setSlipPreviewSrc] = useState<string | null>(null);
+  const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
   const [form, setForm] = useState<StaffFormState>(initialForm(today));
 
   const selectedProduct = useMemo(
@@ -104,7 +121,6 @@ export default function StaffPage() {
     void loadPage();
   }, []);
 
-  const activePromo = promotions.find((promo) => String(promo.id) === String(form.promoId));
   const unitDiscount = Number(form.discount || 0) + Number(form.manualDisc || 0);
   const unitNet = Math.max(0, Number(form.price || 0) - unitDiscount);
   const zone = form.delivery === "delivery" ? getZoneByKm(Number(form.km || 0)) : null;
@@ -123,11 +139,15 @@ export default function StaffPage() {
   }, [selectedProduct, form.delivery]);
 
   useEffect(() => {
-    setForm((current) => ({
-      ...current,
-      discount: activePromo ? activePromo.amount : 0
-    }));
-  }, [activePromo]);
+    const promo = promotions.find((p) => String(p.id) === String(form.promoId));
+    if (!promo) {
+      setForm((current) => ({ ...current, discount: 0 }));
+      return;
+    }
+    const unitPrice = Number(form.price) || 0;
+    const discount = promoUnitDiscountBaht(promo, unitPrice);
+    setForm((current) => ({ ...current, discount }));
+  }, [form.promoId, form.price, promotions]);
 
   const stats = useMemo(() => {
     const total = sales.reduce((sum, sale) => sum + Number(sale.grandTotal || 0), 0);
@@ -194,6 +214,7 @@ export default function StaffPage() {
         km: form.delivery === "delivery" ? Number(form.km || 0) : null,
         zoneName: zone?.label || null,
         addr: form.addr,
+        deliveryAddress: form.deliveryAddress,
         note: form.note,
         wFee: workerFee,
         wType: form.delivery === "delivery" ? "po" : "ice",
@@ -255,19 +276,6 @@ export default function StaffPage() {
     }
   }
 
-  async function handleMarkSalePaid(saleId: string): Promise<void> {
-    try {
-      setUpdatingSaleId(saleId);
-      await api.updateSaleStatus(saleId, { status: "paid" });
-      await loadPage();
-    } catch (error) {
-      console.error("Failed to update sale status:", error);
-      alert(error instanceof Error ? error.message : "Failed to update sale status");
-    } finally {
-      setUpdatingSaleId(null);
-    }
-  }
-
   return (
     <main className="wrap">
       <section className="stats2">
@@ -282,7 +290,10 @@ export default function StaffPage() {
       </section>
 
       <form className="card" onSubmit={handleSubmit}>
-        <h3>➕ บันทึกการขาย</h3>
+        <h3 className="h-with-icon">
+          <PlusCircle size={20} strokeWidth={2} aria-hidden />
+          บันทึกการขาย
+        </h3>
         <div className="frow">
           <div className="fg">
             <label>วันที่ขาย</label>
@@ -323,7 +334,7 @@ export default function StaffPage() {
               <option value="">— ไม่มีส่วนลด —</option>
               {promotions.filter((promo) => promo.active).map((promo) => (
                 <option key={promo.id} value={promo.id}>
-                  {promo.name} (ลด {formatMoney(promo.amount)})
+                  {promo.name} (ลด {formatPromoValueLabel(promo)})
                 </option>
               ))}
             </select>
@@ -356,26 +367,42 @@ export default function StaffPage() {
         <div className="dtoggle">
           <label>วิธีรับสินค้า</label>
           <div className="dopts">
-            <button type="button" className={`dopt${form.delivery === "self" ? " sel" : ""}`} onClick={() => handleDeliveryChange("self")}>
-              🏭 รับที่โกดัง
+            <button type="button" className={`dopt${form.delivery === "selfpickup" ? " sel" : ""}`} onClick={() => handleDeliveryChange("selfpickup")}>
+              <Warehouse size={16} strokeWidth={2} aria-hidden />
+              รับที่โกดัง
             </button>
             <button type="button" className={`dopt${form.delivery === "delivery" ? " sel" : ""}`} onClick={() => handleDeliveryChange("delivery")}>
-              🚚 ส่งถึงบ้าน
+              <Truck size={16} strokeWidth={2} aria-hidden />
+              ส่งถึงบ้าน
             </button>
           </div>
         </div>
 
         {form.delivery === "delivery" && (
           <div className="delbox show">
-            <div className="delbox-title">📍 ข้อมูลการจัดส่ง</div>
+            <div className="delbox-title">
+              <MapPin size={14} strokeWidth={2} aria-hidden />
+              ข้อมูลการจัดส่ง
+            </div>
             <div className="frow">
               <div className="fg">
                 <label>ระยะทาง (กม.)</label>
                 <input type="number" value={form.km} onChange={(e) => setForm({ ...form, km: e.target.value === "" ? "" : Number(e.target.value) })} />
               </div>
               <div className="fg">
-                <label>ชื่อลูกค้า / หมายเหตุ</label>
-                <input type="text" value={form.addr} onChange={(e) => setForm({ ...form, addr: e.target.value })} />
+                <label>ชื่อลูกค้า</label>
+                <input type="text" value={form.addr} onChange={(e) => setForm({ ...form, addr: e.target.value })} placeholder="ชื่อผู้รับ / ติดต่อ" />
+              </div>
+            </div>
+            <div className="frow s1">
+              <div className="fg">
+                <label>ที่อยู่จัดส่ง</label>
+                <textarea
+                  value={form.deliveryAddress}
+                  onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
+                  placeholder="บ้านเลขที่ ซอย ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
+                  rows={3}
+                />
               </div>
             </div>
             {zone && (
@@ -395,7 +422,10 @@ export default function StaffPage() {
         </div>
 
         <div className="card" style={{ background: "linear-gradient(135deg,var(--green),var(--green-light))", color: "white" }}>
-          <h3 style={{ color: "white" }}>💰 ยอดรวม</h3>
+          <h3 className="h-with-icon" style={{ color: "white" }}>
+            <Wallet size={20} strokeWidth={2} aria-hidden />
+            ยอดรวม
+          </h3>
           <div className="crow">
             <div className="ctxt">ราคาสินค้าสุทธิ</div>
             <div className="crow-r">{formatMoney(unitNet * Number(form.qty || 1))}</div>
@@ -410,15 +440,26 @@ export default function StaffPage() {
           </div>
         </div>
 
-        <button className="btnok" type="submit" disabled={!form.type || !form.price}>💾 บันทึกการขาย</button>
+        <button className="btnok" type="submit" disabled={!form.type || !form.price}>
+          <Save size={18} strokeWidth={2} aria-hidden />
+          บันทึกการขาย
+        </button>
       </form>
 
       <section>
-        <div className="slist-title">📋 รายการขายเดือนนี้</div>
+        <div className="slist-title with-icon">
+          <ClipboardList size={16} strokeWidth={2} aria-hidden />
+          รายการขายเดือนนี้
+        </div>
         {loading ? (
           <div className="empty"><p>กำลังโหลด...</p></div>
         ) : sales.length === 0 ? (
-          <div className="empty"><div className="ico">📦</div><p>ยังไม่มีรายการ</p></div>
+          <div className="empty">
+            <div className="ico" aria-hidden>
+              <Package size={26} strokeWidth={1.75} />
+            </div>
+            <p>ยังไม่มีรายการ</p>
+          </div>
         ) : (
           sales.map((sale) => (
             <div key={sale.id} className={`sitem ${sale.delivery}`}>
@@ -427,12 +468,27 @@ export default function StaffPage() {
                 <div className="sdetail">
                   <span>{sale.type}</span>
                   <span>x{sale.qty}</span>
-                  <span className={`bdg ${sale.delivery === "delivery" ? "del" : "pick"}`}>{sale.delivery === "delivery" ? "🚚 ส่งบ้าน" : "🏭 รับเอง"}</span>
+                  <span className={`bdg with-icon-sm ${sale.delivery === "delivery" ? "del" : "pick"}`}>
+                    {sale.delivery === "delivery" ? (
+                      <>
+                        <Truck size={11} strokeWidth={2.5} aria-hidden />
+                        ส่งบ้าน
+                      </>
+                    ) : (
+                      <>
+                        <Warehouse size={11} strokeWidth={2.5} aria-hidden />
+                        รับเอง
+                      </>
+                    )}
+                  </span>
                   <span className={`bdg ${sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "dep" : "pend"}`}>
                     {getPayStatusLabel(sale.payStatus)}
                   </span>
                 </div>
-                <div className="sale-actions">
+              </div>
+              <div className="sitem-right">
+                <div className="sprice">{formatMoney(sale.grandTotal)}</div>
+                <div className="sale-actions sale-actions--staff-row">
                   <input
                     ref={(node) => {
                       paymentSlipInputRefs.current[sale.id] = node;
@@ -446,40 +502,44 @@ export default function StaffPage() {
                   />
                   <button
                     type="button"
-                    className="sale-action-btn"
+                    className="sale-action-btn sale-action-btn--prominent"
                     onClick={() => openPaymentSlipPicker(sale.id)}
                     disabled={uploadingSaleId === sale.id}
                   >
-                    {uploadingSaleId === sale.id ? "กำลังอัปโหลด..." : sale.paymentSlipImage ? "อัปเดตสลิป" : "แนบสลิปโอนเงิน"}
+                    {uploadingSaleId === sale.id ? (
+                      "กำลังอัปโหลด..."
+                    ) : sale.paymentSlipImage ? (
+                      <>
+                        <ImagePlus size={16} strokeWidth={2} aria-hidden />
+                        อัปเดตสลิป
+                      </>
+                    ) : (
+                      <>
+                        <ImagePlus size={16} strokeWidth={2} aria-hidden />
+                        แนบสลิปโอนเงิน
+                      </>
+                    )}
                   </button>
                   {sale.paymentSlipImage && (
-                    <a className="sale-slip-link" href={sale.paymentSlipImage} target="_blank" rel="noreferrer">
+                    <button
+                      type="button"
+                      className="sale-slip-link sale-slip-link--staff"
+                      onClick={() => setSlipPreviewSrc(sale.paymentSlipImage!)}
+                    >
                       ดูสลิป
-                    </a>
+                    </button>
                   )}
-                  <label className="sale-paid-toggle">
-                    <input
-                      type="checkbox"
-                      checked={sale.payStatus === "paid"}
-                      disabled={sale.payStatus === "paid" || !sale.paymentSlipImage || updatingSaleId === sale.id}
-                      onChange={(event) => {
-                        if (event.target.checked) {
-                          void handleMarkSalePaid(sale.id);
-                        }
-                      }}
-                    />
-                    <span>อัปเดตเป็นชำระแล้ว</span>
-                  </label>
                 </div>
               </div>
-              <div className="sitem-r">
-                <div className="sprice">{formatMoney(sale.grandTotal)}</div>
-              </div>
-              <button className="bdel" type="button" onClick={() => handleDeleteSale(sale.id)}>✕</button>
+              <button className="bdel" type="button" aria-label="ลบรายการ" onClick={() => handleDeleteSale(sale.id)}>
+                <X size={16} strokeWidth={2.5} aria-hidden />
+              </button>
             </div>
           ))
         )}
       </section>
+
+      <PaymentSlipLightbox imageSrc={slipPreviewSrc} onClose={closeSlipPreview} />
     </main>
   );
 }

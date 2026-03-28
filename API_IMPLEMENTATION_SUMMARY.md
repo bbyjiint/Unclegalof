@@ -12,7 +12,7 @@ Created adapter functions to transform data between frontend and database format
 - `salePayloadToSaleRecord()` - Converts frontend sale payload to database format
 - `promotionToFrontend()` - Converts database Promotion to frontend format
 - `repairRecordToRepairItem()` - Converts database RepairRecord to frontend format
-- `repairPayloadToRepairRecord()` - Converts frontend repair payload to database format
+- Repair create payload is built in `repairs.routes.js` (required Prisma fields).
 
 ### 2. **Updated Routes**
 

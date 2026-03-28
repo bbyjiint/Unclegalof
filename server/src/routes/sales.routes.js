@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireStaff } from "../middleware/authorize.middleware.js";
+import { requireOwnerOrAdmin, requireStaff } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
 
@@ -19,10 +19,11 @@ const frontendSaleSchema = z.object({
   discount: z.number().nonnegative().optional().default(0),
   manualDisc: z.number().nonnegative().optional().default(0),
   manualReason: z.string().optional().default(""),
-  delivery: z.enum(["self", "delivery"]),
+  delivery: z.enum(["selfpickup", "delivery"]),
   km: z.number().nullable().optional(),
   zoneName: z.string().nullable().optional(),
   addr: z.string().optional().default(""),
+  deliveryAddress: z.string().optional().default(""),
   note: z.string().optional().default(""),
   wFee: z.number().nonnegative().optional().default(0),
   wType: z.enum(["po", "ice"]),
@@ -197,7 +198,7 @@ router.patch(
 router.patch(
   "/:id/status",
   authenticate,
-  requireStaff,
+  requireOwnerOrAdmin,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(updateSaleStatusSchema),

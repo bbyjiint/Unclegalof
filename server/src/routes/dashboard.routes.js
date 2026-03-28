@@ -5,6 +5,7 @@ import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
 import { saleRecordToSale, promotionToFrontend } from "../lib/adapters.js";
+import { findAllPromotionsRows } from "../lib/promotions.db.js";
 
 const router = Router();
 
@@ -21,7 +22,8 @@ router.get(
   validate(queryMonthYearSchema, "query"),
   async (req, res, next) => {
     try {
-      const { month, year } = req.query;
+      const month = Number(req.query.month);
+      const year = Number(req.query.year);
       const start = new Date(Date.UTC(year, month - 1, 1));
       const end = new Date(Date.UTC(year, month, 1));
       
@@ -41,16 +43,12 @@ router.get(
         orderBy: { createdAt: "desc" },
       });
       
-      // Get promotions
-      const promotions = await prisma.promotion.findMany({
-        orderBy: { createdAt: "desc" },
-      });
-      
+      const promotionRows = await findAllPromotionsRows();
+
       // Transform sales to frontend format
       const sales = saleRecords.map((sale, index) => saleRecordToSale(sale, index));
-      
-      // Transform promotions to frontend format
-      const promotionsFrontend = promotions.map((promo, index) => promotionToFrontend(promo, index));
+
+      const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
       
       // Calculate summary
       const income = sales.reduce((sum, sale) => sum + sale.grandTotal, 0);
@@ -70,10 +68,24 @@ router.get(
       });
       
       const baseCosts = payrollRecords.reduce((sum, pr) => sum + pr.baseSalary + (pr.bonus || 0) - (pr.deduction || 0), 0);
-      
-      // Note: Inventory cost calculation would need inventory models
-      const inventoryCost = 0; // TODO: Calculate from inventory when models are added
-      
+
+      const lotsReceivedInMonth = await prisma.inventoryLot.findMany({
+        where: {
+          createdAt: {
+            gte: start,
+            lt: end,
+          },
+        },
+        select: {
+          qty: true,
+          costPerUnit: true,
+        },
+      });
+      const inventoryCost = lotsReceivedInMonth.reduce(
+        (sum, lot) => sum + lot.qty * lot.costPerUnit,
+        0
+      );
+
       const cost = inventoryCost + workerCost + baseCosts;
       const profit = income - cost;
       const margin = income > 0 ? (profit / income) * 100 : 0;

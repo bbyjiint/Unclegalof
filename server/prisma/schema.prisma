@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {
@@ -14,6 +14,40 @@ enum UserRole {
   STAFF
   INVENTORY
   DELIVERY
+}
+
+enum Status {
+  paid
+  pending
+  deposit
+}
+
+enum DeliveryMethod {
+  selfpickup
+  delivery
+}
+
+enum PromotionAmountType {
+  fixed
+  percent
+}
+
+enum InventoryDirection {
+  IN
+  OUT
+}
+
+enum PipelineStatus {
+  planned
+  ordered
+  transit
+  arrived
+}
+
+enum PipelinePriority {
+  normal
+  urgent
+  low
 }
 
 model User {
@@ -30,6 +64,7 @@ model User {
   repairRecordsReported RepairRecord[]
   saleCommissions       SaleRecordCommission[]
   payrollRecords        PayrollRecord[]
+  inventoryMovements    InventoryMovement[]
 }
 
 model DeskItem {
@@ -41,6 +76,9 @@ model DeskItem {
   updatedAt     DateTime       @updatedAt
   saleRecords   SaleRecord[]
   repairRecords RepairRecord[]
+  inventoryLots InventoryLot[]
+  inventoryMovements InventoryMovement[]
+  pipelineItems PipelineItem[]
 }
 
 model DeliveryFee {
@@ -52,10 +90,11 @@ model DeliveryFee {
 }
 
 model Promotion {
-  id          String       @id @default(uuid()) @db.Uuid
-  name        String       @unique
-  amount      Int          @default(0)
-  isActive    Boolean      @default(true)
+  id          String               @id @default(uuid()) @db.Uuid
+  name        String               @unique
+  amountType  PromotionAmountType  @default(fixed)
+  amount      Int                  @default(0)
+  isActive    Boolean              @default(true)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   saleRecords SaleRecord[]
@@ -72,14 +111,15 @@ model SaleRecord {
   promoDiscount        Int                    @default(0)
   manualDiscount       Int                    @default(0)
   manualDiscountReason String?
-  status               String
+  status               Status                 @default(pending)
   appliedPromotion     String?                @db.Uuid
   amount               Int
-  deliveryType         String
+  deliveryType         DeliveryMethod         @default(selfpickup)
   deliveryRange        Int?
   workerFee            Int                    @default(0)
   workerFeeType        String?
   customerName         String?
+  deliveryAddress      String?                @db.Text
   remarks              String?
   paymentSlipImage     String?                @db.Text
   paidAt               DateTime?
@@ -107,6 +147,8 @@ model RepairRecord {
   kind         String       @default("repair")
   status       String       @default("open")
   amount       Int
+  /// Base64 data URLs (data:image/...), same pattern as SaleRecord.paymentSlipImage
+  images       Json         @default("[]")
   deskItem     DeskItem     @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   reporter     User         @relation(fields: [reportedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
@@ -148,4 +190,58 @@ model PayrollRecord {
   @@unique([userId, year, month])
   @@index([userId])
   @@index([year, month])
+}
+
+/// Stock received in batches; remainingQty supports future OUT movements.
+model InventoryLot {
+  id             String   @id @default(uuid()) @db.Uuid
+  deskItemId     String   @db.Uuid
+  qty            Int
+  remainingQty   Int
+  costPerUnit    Int      @default(0)
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deskItem       DeskItem @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  movements      InventoryMovement[]
+
+  @@index([deskItemId])
+  @@index([createdAt])
+}
+
+model InventoryMovement {
+  id              String             @id @default(uuid()) @db.Uuid
+  deskItemId      String             @db.Uuid
+  inventoryLotId  String?            @db.Uuid
+  direction       InventoryDirection
+  qty             Int
+  note            String?
+  createdAt       DateTime           @default(now())
+  createdByUserId String?            @db.Uuid
+  deskItem        DeskItem           @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  lot             InventoryLot?      @relation(fields: [inventoryLotId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdBy       User?              @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([deskItemId])
+  @@index([createdAt])
+  @@index([inventoryLotId])
+}
+
+/// Incoming supply / orders not yet in stock (owner pipeline).
+model PipelineItem {
+  id            String           @id @default(uuid()) @db.Uuid
+  deskItemId    String           @db.Uuid
+  qty           Int
+  costEst       Int              @default(0)
+  expectedDate  DateTime?
+  note          String?
+  status        PipelineStatus   @default(planned)
+  priority      PipelinePriority @default(normal)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  deskItem      DeskItem         @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([deskItemId])
+  @@index([status])
+  @@index([expectedDate])
 }

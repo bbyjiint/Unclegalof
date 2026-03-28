@@ -19,10 +19,13 @@ export default function App() {
           <Route path="/signup" element={<SignupPage />} />
         </Route>
 
-        <Route element={<ProtectedRoute />}>
+        <Route element={<ProtectedRoute allowedRoles={["OWNER", "ADMIN", "STAFF"]} />}>
           <Route path="/staff" element={<StaffPage />} />
-          <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/repair" element={<RepairPage />} />
+        </Route>
+
+        <Route element={<ProtectedRoute allowedRoles={["OWNER", "ADMIN", "INVENTORY"]} />}>
+          <Route path="/inventory" element={<InventoryPage />} />
         </Route>
 
         <Route element={<ProtectedRoute allowedRoles={["OWNER", "ADMIN"]} />}>

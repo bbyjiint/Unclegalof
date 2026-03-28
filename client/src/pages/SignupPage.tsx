@@ -1,6 +1,8 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../components/AuthProvider";
+import { api } from "../lib/api";
+import { getDefaultRouteForRole } from "../lib/roleRoutes";
 
 type Role = "owner" | "employee";
 
@@ -10,11 +12,28 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState<Role>("employee");
+  const [allowOwnerSignup, setAllowOwnerSignup] = useState(false);
+  const [loadingSignupOptions, setLoadingSignupOptions] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const navigate = useNavigate();
   const { signup } = useAuth();
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const status = await api.registrationStatus();
+        setAllowOwnerSignup(status.allowOwnerSignup);
+        setRole(status.allowOwnerSignup ? "owner" : "employee");
+      } catch {
+        setAllowOwnerSignup(false);
+        setRole("employee");
+      } finally {
+        setLoadingSignupOptions(false);
+      }
+    })();
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -27,14 +46,14 @@ export default function SignupPage() {
 
     try {
       setSubmitting(true);
-      await signup({
+      const user = await signup({
         fullName: name,
         email,
         password,
         phone: phone || undefined,
-        role: role === "owner" ? "OWNER" : "STAFF",
+        role: allowOwnerSignup && role === "owner" ? "OWNER" : "STAFF",
       });
-      navigate("/staff");
+      navigate(getDefaultRouteForRole(user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
     } finally {
@@ -46,7 +65,11 @@ export default function SignupPage() {
     <main className="landing">
       <section className="card" style={{ maxWidth: 420, margin: "32px auto" }}>
         <h3>Sign up</h3>
-        <p style={{ marginBottom: 16 }}>Create an account and choose whether this user is owner or employee.</p>
+        <p style={{ marginBottom: 16 }}>
+          {allowOwnerSignup
+            ? "Create the first account. Owner access is only available during initial setup."
+            : "Create a staff account to sign in to the system."}
+        </p>
 
         <form onSubmit={handleSubmit} className="form" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -92,31 +115,33 @@ export default function SignupPage() {
             />
           </label>
 
-          <fieldset style={{ border: "none", padding: 0, margin: "8px 0 0 0" }}>
-            <legend style={{ marginBottom: 4 }}>Role</legend>
-            <div style={{ display: "flex", gap: 12 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <input
-                  type="radio"
-                  name="role"
-                  value="employee"
-                  checked={role === "employee"}
-                  onChange={() => setRole("employee")}
-                />
-                Employee
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <input
-                  type="radio"
-                  name="role"
-                  value="owner"
-                  checked={role === "owner"}
-                  onChange={() => setRole("owner")}
-                />
-                Owner
-              </label>
-            </div>
-          </fieldset>
+          {allowOwnerSignup && (
+            <fieldset style={{ border: "none", padding: 0, margin: "8px 0 0 0" }}>
+              <legend style={{ marginBottom: 4 }}>Role</legend>
+              <div style={{ display: "flex", gap: 12 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    type="radio"
+                    name="role"
+                    value="employee"
+                    checked={role === "employee"}
+                    onChange={() => setRole("employee")}
+                  />
+                  Employee
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    type="radio"
+                    name="role"
+                    value="owner"
+                    checked={role === "owner"}
+                    onChange={() => setRole("owner")}
+                  />
+                  Owner
+                </label>
+              </div>
+            </fieldset>
+          )}
 
           {error && (
             <p style={{ color: "var(--red)", fontSize: 12, marginTop: 4 }}>
@@ -124,8 +149,13 @@ export default function SignupPage() {
             </p>
           )}
 
-          <button type="submit" className="vbtn" style={{ marginTop: 8 }} disabled={submitting}>
-            {submitting ? "Creating account..." : "Create account"}
+          <button
+            type="submit"
+            className="vbtn"
+            style={{ marginTop: 8 }}
+            disabled={submitting || loadingSignupOptions}
+          >
+            {loadingSignupOptions ? "Loading..." : submitting ? "Creating account..." : "Create account"}
           </button>
         </form>
 

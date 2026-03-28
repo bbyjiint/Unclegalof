@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
+import { getDefaultRouteForRole } from "../lib/roleRoutes";
 
 export default function PublicOnlyRoute() {
   const { user, loading } = useAuth();
@@ -9,7 +10,7 @@ export default function PublicOnlyRoute() {
   }
 
   if (user) {
-    return <Navigate to="/staff" replace />;
+    return <Navigate to={getDefaultRouteForRole(user.role)} replace />;
   }
 
   return <Outlet />;

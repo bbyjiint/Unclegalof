@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../components/AuthProvider";
+import { getDefaultRouteForRole } from "../lib/roleRoutes";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -22,8 +23,8 @@ export default function LoginPage() {
 
     try {
       setSubmitting(true);
-      await login({ email, password });
-      navigate("/staff");
+      const user = await login({ email, password });
+      navigate(getDefaultRouteForRole(user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
