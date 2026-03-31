@@ -15,7 +15,9 @@ import type {
   ReportsSummaryResponse
 } from "../types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.PROD ? "https://unclegalof-server.vercel.app/api" : "/api");
 
 type RequestOptions = RequestInit & {
   headers?: HeadersInit;
