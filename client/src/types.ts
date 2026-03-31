@@ -10,6 +10,8 @@ export interface AuthUser {
   fullName: string;
   phone?: string | null;
   role: UserRole;
+  /** Tenant owner user id; null for OWNER/ADMIN rows. */
+  ownerId?: string | null;
 }
 
 export interface AuthResponse {
@@ -99,6 +101,18 @@ export interface OwnerDashboard {
 
 export interface SalesResponse {
   items: Sale[];
+}
+
+/** GET /api/reports — owner-class only */
+export interface ReportsSummaryResponse {
+  month: number;
+  year: number;
+  summary: {
+    orderCount: number;
+    grossIncome: number;
+    commissionTotal: number;
+    netAfterCommissions: number;
+  };
 }
 
 export interface PromotionsResponse {

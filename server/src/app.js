@@ -8,6 +8,9 @@ import promotionsRoutes from "./routes/promotions.routes.js";
 import repairsRoutes from "./routes/repairs.routes.js";
 import salesRoutes from "./routes/sales.routes.js";
 import authRoutes from "./routes/auth.routes.js";
+import ownerRoutes from "./routes/owner.routes.js";
+import ordersRoutes from "./routes/orders.routes.js";
+import reportsRoutes from "./routes/reports.routes.js";
 import { generalRateLimiter } from "./middleware/rateLimit.middleware.js";
 
 function parseAllowedOrigins(value) {
@@ -67,6 +70,9 @@ export function createApp() {
 
   // Public routes (no auth required)
   app.use("/api/auth", authRoutes);
+  app.use("/api/owner", ownerRoutes);
+  app.use("/api/orders", ordersRoutes);
+  app.use("/api/reports", reportsRoutes);
 
   // Protected routes (require authentication - will be added per route)
   app.use("/api/catalog", catalogRoutes);

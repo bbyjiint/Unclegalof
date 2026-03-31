@@ -57,14 +57,24 @@ model User {
   passwordHash          String
   phone                 String?
   role                  UserRole               @default(STAFF)
+  /// For STAFF/INVENTORY/DELIVERY: business owner. NULL for OWNER/ADMIN rows.
+  ownerId               String?                @db.Uuid
   baseSalary            Int?
   isActive              Boolean                @default(true)
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
+
+  owner                 User?                  @relation("StaffOwner", fields: [ownerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  staffMembers          User[]                 @relation("StaffOwner")
+
+  tenantSales           SaleRecord[]           @relation("SaleTenant")
+
   repairRecordsReported RepairRecord[]
   saleCommissions       SaleRecordCommission[]
   payrollRecords        PayrollRecord[]
   inventoryMovements    InventoryMovement[]
+
+  @@index([ownerId])
 }
 
 model DeskItem {
@@ -103,6 +113,8 @@ model Promotion {
 model SaleRecord {
   id                   String                 @id @default(uuid()) @db.Uuid
   createdAt            DateTime               @default(now())
+  /// Tenant: the OWNER user id this order belongs to.
+  ownerId              String                 @db.Uuid
   saleDate             DateTime
   orderNumber          String                 @unique
   deskType             String                 @db.Uuid
@@ -127,11 +139,13 @@ model SaleRecord {
   deliveryFee          DeliveryFee?           @relation(fields: [deliveryRange], references: [range])
   promotion            Promotion?             @relation(fields: [appliedPromotion], references: [id], onDelete: Restrict, onUpdate: Cascade)
   commissions          SaleRecordCommission[]
+  tenantOwner          User                   @relation("SaleTenant", fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([saleDate])
   @@index([deskType])
   @@index([appliedPromotion])
   @@index([deliveryRange])
+  @@index([ownerId])
 }
 
 model RepairRecord {

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireOwnerOrAdmin, requireStaff } from "../middleware/authorize.middleware.js";
+import { requireOwnerOrAdmin, requireStaff, requireTenant } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
 
@@ -51,6 +51,7 @@ const updateSaleStatusSchema = z.object({
 router.get(
   "/",
   authenticate,
+  requireTenant,
   requireStaff,
   validate(queryMonthYearSchema, "query"),
   async (req, res, next) => {
@@ -61,6 +62,7 @@ router.get(
       
       const saleRecords = await prisma.saleRecord.findMany({
         where: {
+          ownerId: req.tenantOwnerId,
           saleDate: {
             gte: start,
             lt: end,
@@ -88,6 +90,7 @@ router.get(
 router.post(
   "/",
   authenticate,
+  requireTenant,
   requireStaff,
   writeRateLimiter,
   validate(frontendSaleSchema),
@@ -116,12 +119,17 @@ router.post(
         }
       }
 
-      const saleRecordData = salePayloadToSaleRecord(payload, deskItem.id);
+      const saleRecordData = salePayloadToSaleRecord(
+        payload,
+        deskItem.id,
+        req.tenantOwnerId
+      );
       const saleDate = new Date(payload.date);
       const year = saleDate.getUTCFullYear();
       const month = saleDate.getUTCMonth() + 1;
       const sequence = await prisma.saleRecord.count({
         where: {
+          ownerId: req.tenantOwnerId,
           saleDate: {
             gte: new Date(Date.UTC(year, month - 1, 1)),
             lt: new Date(Date.UTC(year, month, 1)),
@@ -154,6 +162,7 @@ router.post(
 router.patch(
   "/:id/payment-slip",
   authenticate,
+  requireTenant,
   requireStaff,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
@@ -172,7 +181,7 @@ router.patch(
         },
       });
 
-      if (!sale) {
+      if (!sale || sale.ownerId !== req.tenantOwnerId) {
         return res.status(404).json({ error: "Sale not found" });
       }
 
@@ -198,6 +207,7 @@ router.patch(
 router.patch(
   "/:id/status",
   authenticate,
+  requireTenant,
   requireOwnerOrAdmin,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
@@ -216,7 +226,7 @@ router.patch(
         },
       });
 
-      if (!sale) {
+      if (!sale || sale.ownerId !== req.tenantOwnerId) {
         return res.status(404).json({ error: "Sale not found" });
       }
 
@@ -247,6 +257,7 @@ router.patch(
 router.delete(
   "/:id",
   authenticate,
+  requireTenant,
   requireStaff,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
@@ -258,7 +269,7 @@ router.delete(
         where: { id },
       });
 
-      if (!sale) {
+      if (!sale || sale.ownerId !== req.tenantOwnerId) {
         return res.status(404).json({ error: "Sale not found" });
       }
       

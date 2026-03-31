@@ -31,6 +31,19 @@ export function requireAuthAndRole(...allowedRoles) {
 }
 
 /**
+ * After authenticate — ensures user is linked to a tenant (staff.ownerId or owner-class user).
+ */
+export function requireTenant(req, res, next) {
+  if (!req.tenantOwnerId) {
+    return res.status(403).json({
+      error: "บัญชีนี้ยังไม่ผูกกับเจ้าของร้าน กรุณาติดต่อผู้ดูแลระบบ",
+    });
+  }
+
+  next();
+}
+
+/**
  * Owner/Admin only - highest privilege level
  */
 export const requireOwnerOrAdmin = requireAuthAndRole(UserRole.OWNER, UserRole.ADMIN);

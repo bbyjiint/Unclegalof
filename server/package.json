@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/prisma-cli.mjs generate && node --watch src/index.js",
+    "start": "node src/index.js",
     "build": "node -e \"console.log('server build step not required')\"",
     "postinstall": "node scripts/prisma-cli.mjs generate",
     "prisma:generate": "node scripts/prisma-cli.mjs generate",

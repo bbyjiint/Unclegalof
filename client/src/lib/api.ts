@@ -11,7 +11,8 @@ import type {
   PromotionsResponse,
   RepairsResponse,
   RepairStatus,
-  SalesResponse
+  SalesResponse,
+  ReportsSummaryResponse
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -22,6 +23,14 @@ type RequestOptions = RequestInit & {
 
 type RegistrationStatusResponse = {
   allowOwnerSignup: boolean;
+  allowPublicStaffSignup: boolean;
+};
+
+type CreateStaffPayload = {
+  fullName: string;
+  email: string;
+  password: string;
+  phone?: string;
 };
 
 type CreatePromotionPayload = {
@@ -98,14 +107,6 @@ type CreatePipelinePayload = {
 
 type UpdatePipelinePayload = Partial<CreatePipelinePayload>;
 
-type RegisterPayload = {
-  fullName: string;
-  email: string;
-  password: string;
-  phone?: string;
-  role: "OWNER" | "STAFF";
-};
-
 type LoginPayload = {
   email: string;
   password: string;
@@ -160,9 +161,12 @@ export const api = {
   },
   login: (payload: LoginPayload) =>
     request<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
-  register: (payload: RegisterPayload) =>
-    request<AuthResponse>("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
   registrationStatus: () => request<RegistrationStatusResponse>("/auth/bootstrap-status"),
+  createStaff: (payload: CreateStaffPayload) =>
+    request<{ message: string; user: AuthUser }>("/owner/staff", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   me: () => request<CurrentUserResponse>("/auth/me"),
   
   // Catalog
@@ -197,8 +201,9 @@ export const api = {
   addInventoryStock: (payload: AddInventoryStockPayload) =>
     request("/inventory/movements/stock-in", { method: "POST", body: JSON.stringify(payload) }),
   
-  // Sales
+  // Sales / orders (same month filter; orders is alias for tenant-scoped list)
   sales: (month: number, year: number) => request<SalesResponse>(`/sales?month=${month}&year=${year}`),
+  orders: (month: number, year: number) => request<SalesResponse>(`/orders?month=${month}&year=${year}`),
   createSale: (payload: CreateSalePayload) => request("/sales", { method: "POST", body: JSON.stringify(payload) }),
   uploadSalePaymentSlip: (id: string, payload: UploadSalePaymentSlipPayload) =>
     request(`/sales/${id}/payment-slip`, { method: "PATCH", body: JSON.stringify(payload) }),
@@ -209,6 +214,10 @@ export const api = {
   // Dashboard
   ownerDashboard: (month: number, year: number) =>
     request<OwnerDashboard>(`/dashboard/owner?month=${month}&year=${year}`),
+
+  // Reports (owner-class)
+  reports: (month: number, year: number) =>
+    request<ReportsSummaryResponse>(`/reports?month=${month}&year=${year}`),
 
   // Pipeline (owner/admin)
   pipeline: () => request<{ items: PipelineItem[] }>("/pipeline"),

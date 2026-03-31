@@ -39,7 +39,7 @@ export function saleRecordToSale(saleRecord, sequence = null) {
 /**
  * Convert frontend Sale payload to database SaleRecord format
  */
-export function salePayloadToSaleRecord(payload, deskItemId) {
+export function salePayloadToSaleRecord(payload, deskItemId, tenantOwnerId) {
   const unitDiscount = (payload.discount || 0) + (payload.manualDisc || 0);
   const unitNet = Math.max(0, (payload.price || 0) - unitDiscount);
   const grandTotal = unitNet * (payload.qty || 1) + (payload.wFee || 0);
@@ -48,6 +48,7 @@ export function salePayloadToSaleRecord(payload, deskItemId) {
   const deliveryType = VALID_DELIVERY_METHODS.has(payload.delivery) ? payload.delivery : "selfpickup";
 
   return {
+    ownerId: tenantOwnerId,
     saleDate: new Date(payload.date),
     deskType: deskItemId,
     quantity: payload.qty || 1,

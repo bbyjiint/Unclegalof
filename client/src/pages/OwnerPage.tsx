@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ClipboardList, PlusCircle, Tag, Truck, X } from "lucide-react";
+import { ClipboardList, PlusCircle, Tag, Truck, UserPlus, X } from "lucide-react";
 import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { formatMoney } from "../data/constants";
 import { api } from "../lib/api";
@@ -48,6 +48,14 @@ export default function OwnerPage() {
   const [updatingSaleId, setUpdatingSaleId] = useState<string | null>(null);
   const [slipPreviewSrc, setSlipPreviewSrc] = useState<string | null>(null);
   const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
+  const [staffForm, setStaffForm] = useState({
+    fullName: "",
+    email: "",
+    password: "",
+    phone: "",
+  });
+  const [staffMessage, setStaffMessage] = useState<string | null>(null);
+  const [staffSubmitting, setStaffSubmitting] = useState(false);
 
   async function loadPage(): Promise<void> {
     try {
@@ -177,6 +185,31 @@ export default function OwnerPage() {
     }
   }
 
+  async function createStaffAccount(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setError(null);
+    setStaffMessage(null);
+    if (!staffForm.fullName.trim() || !staffForm.email.trim() || staffForm.password.length < 8) {
+      setError("กรอกชื่อ อีเมล และรหัสผ่านอย่างน้อย 8 ตัวอักษร");
+      return;
+    }
+    try {
+      setStaffSubmitting(true);
+      await api.createStaff({
+        fullName: staffForm.fullName.trim(),
+        email: staffForm.email.trim(),
+        password: staffForm.password,
+        phone: staffForm.phone.trim() || undefined,
+      });
+      setStaffForm({ fullName: "", email: "", password: "", phone: "" });
+      setStaffMessage("สร้างบัญชีพนักงานเรียบร้อยแล้ว");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "สร้างบัญชีพนักงานไม่สำเร็จ");
+    } finally {
+      setStaffSubmitting(false);
+    }
+  }
+
   if (!dashboard) {
     return (
       <main className="owrap">
@@ -202,6 +235,78 @@ export default function OwnerPage() {
         <div className="scard c3"><label>กำไรสุทธิ</label><div className="val">{formatMoney(summary.profit)}</div></div>
         <div className="scard c4"><label>Margin</label><div className="val">{Number(summary.margin || 0).toFixed(1)}%</div></div>
       </div>
+
+      <section className="card">
+        <h3 className="h-with-icon">
+          <UserPlus size={20} strokeWidth={2} aria-hidden />
+          เพิ่มบัญชีพนักงาน
+        </h3>
+        <p style={{ fontSize: 13, color: "var(--gray)", marginBottom: 12 }}>
+          สร้างบัญชีให้พนักงานในสาขาของคุณ (ไม่มีการสมัครสมาชิกแบบสาธารณะ)
+        </p>
+        {staffMessage ? (
+          <div
+            className="card"
+            style={{ marginBottom: 12, borderLeft: "4px solid var(--green, #2e7d32)" }}
+            role="status"
+          >
+            {staffMessage}
+          </div>
+        ) : null}
+        <form onSubmit={createStaffAccount}>
+          <div className="frow">
+            <div className="fg">
+              <label>ชื่อ–นามสกุล</label>
+              <input
+                value={staffForm.fullName}
+                onChange={(e) => setStaffForm({ ...staffForm, fullName: e.target.value })}
+                autoComplete="name"
+                required
+                disabled={staffSubmitting}
+              />
+            </div>
+            <div className="fg">
+              <label>อีเมล (ใช้เข้าสู่ระบบ)</label>
+              <input
+                type="email"
+                value={staffForm.email}
+                onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
+                autoComplete="email"
+                required
+                disabled={staffSubmitting}
+              />
+            </div>
+          </div>
+          <div className="frow">
+            <div className="fg">
+              <label>รหัสผ่าน (อย่างน้อย 8 ตัว)</label>
+              <input
+                type="password"
+                value={staffForm.password}
+                onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })}
+                autoComplete="new-password"
+                minLength={8}
+                required
+                disabled={staffSubmitting}
+              />
+            </div>
+            <div className="fg">
+              <label>เบอร์โทร (ไม่บังคับ)</label>
+              <input
+                type="tel"
+                value={staffForm.phone}
+                onChange={(e) => setStaffForm({ ...staffForm, phone: e.target.value })}
+                autoComplete="tel"
+                disabled={staffSubmitting}
+              />
+            </div>
+          </div>
+          <button className="btnok with-icon" type="submit" disabled={staffSubmitting}>
+            <UserPlus size={18} strokeWidth={2} aria-hidden />
+            {staffSubmitting ? "กำลังสร้าง…" : "สร้างบัญชีพนักงาน"}
+          </button>
+        </form>
+      </section>
 
       <section className="card">
         <h3 className="h-with-icon">

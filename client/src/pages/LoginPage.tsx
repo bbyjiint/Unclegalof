@@ -112,9 +112,9 @@ export default function LoginPage() {
       </button>
 
       <p className="auth-hero-signup">
-        ยังไม่มีบัญชี?{" "}
+        ต้องการบัญชี?{" "}
         <Link className="auth-hero-signup-link" to="/signup">
-          สมัครสมาชิก
+          ดูวิธีได้บัญชี
         </Link>
       </p>
     </AuthHeroShell>

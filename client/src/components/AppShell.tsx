@@ -62,7 +62,7 @@ export default function AppShell({ children }: PropsWithChildren) {
                 เข้าสู่ระบบ
               </NavLink>
               <NavLink to="/signup" className={({ isActive }) => `vbtn${isActive ? " active" : ""}`}>
-                สมัครสมาชิก
+                เปิดบัญชี
               </NavLink>
             </>
           )}
