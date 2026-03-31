@@ -1019,6 +1019,51 @@ button.sale-slip-link {
   overflow-x: auto;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 31, 22, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.modal-card {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 18px 40px rgba(8, 20, 13, 0.25);
+  padding: 16px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.modal-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef3ef;
+  color: var(--dark);
+}
+
+.modal-close:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
