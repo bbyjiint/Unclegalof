@@ -14,19 +14,28 @@ import reportsRoutes from "./routes/reports.routes.js";
 import { generalRateLimiter } from "./middleware/rateLimit.middleware.js";
 
 function parseAllowedOrigins(value) {
-  if (!value) {
-    return ["http://localhost:5173"];
-  }
-
-  return value
+  const configured = (value || "")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+
+  // Keep sane defaults for local dev and the current production frontend.
+  if (configured.length === 0) {
+    return ["http://localhost:5173", "https://unclegalof-client.vercel.app"];
+  }
+
+  return configured;
+}
+
+function normalizeOrigin(origin) {
+  return origin.trim().replace(/\/+$/, "");
 }
 
 export function createApp() {
   const app = express();
-  const allowedOrigins = new Set(parseAllowedOrigins(process.env.CLIENT_ORIGIN));
+  const allowedOrigins = new Set(
+    parseAllowedOrigins(process.env.CLIENT_ORIGIN).map((origin) => normalizeOrigin(origin))
+  );
   const bodyLimit = process.env.MAX_BODY_SIZE || "12mb";
 
   if (process.env.NODE_ENV === "production") {
@@ -39,7 +48,7 @@ export function createApp() {
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || allowedOrigins.has(origin)) {
+        if (!origin || allowedOrigins.has(normalizeOrigin(origin))) {
           return callback(null, true);
         }
 
