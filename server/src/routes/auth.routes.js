@@ -6,6 +6,7 @@ import { generateToken } from "../lib/jwt.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
+import { requireOwner } from "../middleware/authorize.middleware.js";
 import { UserRole } from "@prisma/client";
 
 const router = Router();
@@ -60,6 +61,18 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
+});
+
+const createStaffSchema = z.object({
+  fullName: z.string().min(1).max(100),
+  username: z.string().min(3).max(50),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  phone: z.string().optional(),
+  role: z.enum([UserRole.SALES, UserRole.REPAIRS]).default(UserRole.SALES),
+});
+
+const paramsStaffIdSchema = z.object({
+  id: z.string().uuid(),
 });
 
 async function ensureDefaultData() {
@@ -265,5 +278,145 @@ router.get("/me", authenticate, async (req, res, next) => {
     next(error);
   }
 });
+
+/**
+ * GET /api/auth/staff
+ * Owner-only: list active staff members
+ */
+router.get("/staff", authenticate, requireOwner, async (_req, res, next) => {
+  try {
+    const staff = await prisma.user.findMany({
+      where: {
+        role: {
+          in: [UserRole.SALES, UserRole.REPAIRS],
+        },
+        isActive: true,
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        fullName: true,
+        username: true,
+        phone: true,
+        role: true,
+        createdAt: true,
+        _count: {
+          select: {
+            createdSales: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      items: staff.map((user) => ({
+        id: user.id,
+        fullName: user.fullName,
+        username: user.username,
+        phone: user.phone,
+        role: user.role,
+        createdAt: user.createdAt.toISOString(),
+        totalSales: user._count.createdSales,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/staff
+ * Owner-only: create staff account
+ */
+router.post(
+  "/staff",
+  authenticate,
+  requireOwner,
+  validate(createStaffSchema),
+  async (req, res, next) => {
+    try {
+      const { fullName, username, password, phone, role } = req.body;
+
+      const existingUser = await prisma.user.findUnique({
+        where: { username },
+      });
+      if (existingUser) {
+        return res.status(409).json({ error: "User with this username already exists" });
+      }
+
+      const passwordHash = await hashPassword(password);
+      const user = await prisma.user.create({
+        data: {
+          fullName,
+          username,
+          passwordHash,
+          phone,
+          role,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          username: true,
+          phone: true,
+          role: true,
+          createdAt: true,
+        },
+      });
+
+      res.status(201).json({
+        user: {
+          ...user,
+          createdAt: user.createdAt.toISOString(),
+          totalSales: 0,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * DELETE /api/auth/staff/:id
+ * Owner-only: remove staff by deactivating account
+ */
+router.delete(
+  "/staff/:id",
+  authenticate,
+  requireOwner,
+  validate(paramsStaffIdSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      const existing = await prisma.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          role: true,
+          isActive: true,
+        },
+      });
+
+      if (!existing || !existing.isActive) {
+        return res.status(404).json({ error: "Staff member not found" });
+      }
+
+      if (existing.role === UserRole.OWNER) {
+        return res.status(400).json({ error: "Owner account cannot be removed" });
+      }
+
+      await prisma.user.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export default router;

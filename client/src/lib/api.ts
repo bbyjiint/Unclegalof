@@ -2,6 +2,7 @@ import type {
   AuthResponse,
   CurrentUserResponse,
   AuthUser,
+  StaffMember,
   InventorySummaryResponse,
   ProductItem,
   OwnerDashboard,
@@ -22,6 +23,18 @@ type RequestOptions = RequestInit & {
 
 type RegistrationStatusResponse = {
   allowOwnerSignup: boolean;
+};
+
+type StaffListResponse = {
+  items: StaffMember[];
+};
+
+type CreateStaffPayload = {
+  fullName: string;
+  username: string;
+  password: string;
+  phone?: string;
+  role: "SALES" | "REPAIRS";
 };
 
 type CreatePromotionPayload = {
@@ -165,6 +178,10 @@ export const api = {
     request<AuthResponse>("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
   registrationStatus: () => request<RegistrationStatusResponse>("/auth/bootstrap-status"),
   me: () => request<CurrentUserResponse>("/auth/me"),
+  staff: () => request<StaffListResponse>("/auth/staff"),
+  createStaff: (payload: CreateStaffPayload) =>
+    request<{ user: StaffMember }>("/auth/staff", { method: "POST", body: JSON.stringify(payload) }),
+  deleteStaff: (id: string) => request(`/auth/staff/${id}`, { method: "DELETE" }),
   
   // Catalog
   getProducts: () => request<{ items: Array<{ id: string; name: string; onsitePrice: number; deliveryPrice: number }> }>("/catalog/products"),

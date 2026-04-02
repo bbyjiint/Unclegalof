@@ -22,6 +22,16 @@ export interface CurrentUserResponse {
   user: AuthUser;
 }
 
+export interface StaffMember {
+  id: string;
+  fullName: string;
+  username: string;
+  phone?: string | null;
+  role: UserRole;
+  createdAt: string;
+  totalSales: number;
+}
+
 export type PromotionAmountType = "fixed" | "percent";
 
 export interface Promotion {
