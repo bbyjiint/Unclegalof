@@ -1,7 +1,7 @@
 import { UserRole } from "@prisma/client";
 
 /** Roles that act as the business owner (tenant root). */
-export const TENANT_OWNER_ROLES = [UserRole.OWNER, UserRole.ADMIN];
+export const TENANT_OWNER_ROLES = [UserRole.OWNER];
 
 /**
  * UUID of the business owner for this user.

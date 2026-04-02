@@ -28,6 +28,7 @@ type AuthContextValue = {
   loading: boolean;
   isAuthenticated: boolean;
   login: (input: LoginInput) => Promise<AuthUser>;
+  signup: (input: SignupInput) => Promise<AuthUser>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 };
@@ -79,6 +80,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return response.user;
   }, [persistSession]);
 
+  const signup = useCallback(async (input: SignupInput) => {
+    const response = await api.register(input);
+    persistSession(response.token, response.user);
+    return response.user;
+  }, [persistSession]);
+
   const logout = useCallback(() => {
     clearSession();
   }, [clearSession]);
@@ -88,9 +95,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     loading,
     isAuthenticated: Boolean(user),
     login,
+    signup,
     logout,
     refreshUser,
-  }), [user, loading, login, logout, refreshUser]);
+  }), [user, loading, login, signup, logout, refreshUser]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
