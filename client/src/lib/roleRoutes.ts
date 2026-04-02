@@ -18,10 +18,13 @@ export function getDefaultRouteForRole(role: UserRole): string {
 
 export function canAccessRoute(role: UserRole, path: string): boolean {
   if (role === "OWNER") {
-    return ["/owner", "/staff", "/inventory", "/repair"].includes(path);
+    if (path.startsWith("/owner")) {
+      return true;
+    }
+    return ["/staff", "/inventory", "/repair"].includes(path);
   }
 
-  if (path === "/owner") {
+  if (path === "/owner" || path.startsWith("/owner/")) {
     return role === "OWNER";
   }
 
