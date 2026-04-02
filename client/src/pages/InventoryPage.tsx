@@ -171,6 +171,68 @@ export default function InventoryPage() {
             )}
           </div>
 
+          <form className="card" onSubmit={handleSubmit}>
+            <h3 className="h-with-icon">
+              <PlusCircle size={20} strokeWidth={2} aria-hidden />
+              รับสินค้าเข้าคลัง
+            </h3>
+            <div className="frow">
+              <div className="fg">
+                <label>ประเภทสินค้า</label>
+                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} required>
+                  <option value="">-- เลือกประเภท --</option>
+                  {products.map((item) => (
+                    <option key={item.id} value={item.name}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="fg">
+                <label>จำนวนที่รับเข้า</label>
+                <input type="number" min="1" value={form.qty} onChange={(e) => setForm({ ...form, qty: Number(e.target.value) || 1 })} required />
+              </div>
+            </div>
+            <div className="frow s1">
+              <div className="fg">
+                <label>หมายเหตุ</label>
+                <input type="text" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+              </div>
+            </div>
+            <button className="btnok" type="submit" disabled={!form.type}>
+              <CheckCircle2 size={18} strokeWidth={2} aria-hidden />
+              บันทึกรับเข้า
+            </button>
+            {products.length === 0 && (
+              <p style={{ marginTop: 10, fontSize: 12, color: "var(--gray)" }}>
+                เพิ่มสินค้าก่อน จึงจะรับเข้าสต็อกได้
+              </p>
+            )}
+          </form>
+
+          <section className="card">
+            <h3 className="h-with-icon">
+              <Clock size={20} strokeWidth={2} aria-hidden />
+              ประวัติการรับ/ขาย
+            </h3>
+            {movements.length === 0 ? (
+              <div className="empty"><p>ยังไม่มีรายการ</p></div>
+            ) : (
+              movements.map((item) => (
+                <div key={item.id} className="crow">
+                  <div className="crow-l">
+                    <div className="ctxt">{item.type}</div>
+                    {item.note && <div className="csub">{item.note}</div>}
+                  </div>
+                  <div className="crow-r">
+                    <span style={{ color: item.direction === "IN" ? "var(--green)" : "var(--red)" }}>
+                      {item.direction === "IN" ? "+" : "-"}
+                      {item.qty}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+
           <section className="card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <h3 className="h-with-icon" style={{ margin: 0 }}>
@@ -299,68 +361,6 @@ export default function InventoryPage() {
               </form>
             </div>
           )}
-
-          <form className="card" onSubmit={handleSubmit}>
-            <h3 className="h-with-icon">
-              <PlusCircle size={20} strokeWidth={2} aria-hidden />
-              รับสินค้าเข้าคลัง
-            </h3>
-            <div className="frow">
-              <div className="fg">
-                <label>ประเภทสินค้า</label>
-                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} required>
-                  <option value="">-- เลือกประเภท --</option>
-                  {products.map((item) => (
-                    <option key={item.id} value={item.name}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="fg">
-                <label>จำนวนที่รับเข้า</label>
-                <input type="number" min="1" value={form.qty} onChange={(e) => setForm({ ...form, qty: Number(e.target.value) || 1 })} required />
-              </div>
-            </div>
-            <div className="frow s1">
-              <div className="fg">
-                <label>หมายเหตุ</label>
-                <input type="text" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-              </div>
-            </div>
-            <button className="btnok" type="submit" disabled={!form.type}>
-              <CheckCircle2 size={18} strokeWidth={2} aria-hidden />
-              บันทึกรับเข้า
-            </button>
-            {products.length === 0 && (
-              <p style={{ marginTop: 10, fontSize: 12, color: "var(--gray)" }}>
-                เพิ่มสินค้าก่อน จึงจะรับเข้าสต็อกได้
-              </p>
-            )}
-          </form>
-
-          <section className="card">
-            <h3 className="h-with-icon">
-              <Clock size={20} strokeWidth={2} aria-hidden />
-              ประวัติการรับ/ขาย
-            </h3>
-            {movements.length === 0 ? (
-              <div className="empty"><p>ยังไม่มีรายการ</p></div>
-            ) : (
-              movements.map((item) => (
-                <div key={item.id} className="crow">
-                  <div className="crow-l">
-                    <div className="ctxt">{item.type}</div>
-                    {item.note && <div className="csub">{item.note}</div>}
-                  </div>
-                  <div className="crow-r">
-                    <span style={{ color: item.direction === "IN" ? "var(--green)" : "var(--red)" }}>
-                      {item.direction === "IN" ? "+" : "-"}
-                      {item.qty}
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-          </section>
         </>
       )}
     </main>
