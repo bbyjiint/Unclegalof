@@ -24,7 +24,7 @@ export const generalRateLimiter = buildLimiter({
 
 export const authRateLimiter = buildLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 50,
+  max: 20,
   message: "Too many authentication attempts. Please try again later.",
   skipSuccessfulRequests: true,
 });
