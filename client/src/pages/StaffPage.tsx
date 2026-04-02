@@ -61,7 +61,7 @@ const initialForm = (today: string): StaffFormState => ({
   discount: 0,
   manualDisc: 0,
   manualReason: "",
-  delivery: "selfpickup",
+  delivery: "delivery",
   km: "",
   addr: "",
   deliveryAddress: "",
