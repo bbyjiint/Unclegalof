@@ -7,6 +7,12 @@ import { getDeliveryRangeFromKm } from "./deliveryZones.js";
 const VALID_SALE_STATUSES = new Set(["paid", "pending", "deposit"]);
 const VALID_DELIVERY_METHODS = new Set(["selfpickup", "delivery"]);
 
+/** Thai mobile: exactly 10 digits, leading 0 (e.g. 0812345678). Strips spaces/dashes. */
+export function normalizeCustomerPhoneThai10(raw) {
+  const d = String(raw ?? "").replace(/\D/g, "");
+  return /^0\d{9}$/.test(d) ? d : null;
+}
+
 /**
  * Convert database SaleRecord to frontend Sale format
  * @param {{ includeCost?: boolean }} [options] — OWNER only: include ต้นทุน / COGS / gross profit
@@ -83,7 +89,7 @@ export function salePayloadToSaleRecord(payload, deskItemId, companyOwnerId) {
     workerFee: payload.wFee || 0,
     workerFeeType: payload.wType || null,
     customerName: payload.addr || null,
-    customerPhone: String(payload.customerPhone ?? "").trim() || null,
+    customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
     deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
     remarks: payload.note || null,
   };

@@ -16,6 +16,7 @@ import { useAuth } from "../components/AuthProvider";
 import { formatMoney, getZoneByKm } from "../data/constants";
 import { api } from "../lib/api";
 import { zoneForKm } from "../lib/deliveryZones";
+import { normalizeThaiMobile10Digits } from "../lib/thaiPhone";
 import { formatPromoValueLabel, promoUnitDiscountBaht } from "../lib/promotions";
 import { uploadFileToR2 } from "../lib/upload";
 import type {
@@ -225,6 +226,7 @@ export default function StaffPage() {
       return;
     }
 
+    let customerPhonePayload = "";
     if (form.delivery === "delivery") {
       if (!Number(form.km) || Number(form.km) <= 0) {
         alert("กรุณากรอกระยะทาง (กม.) สำหรับการจัดส่ง");
@@ -238,10 +240,12 @@ export default function StaffPage() {
         alert("กรุณากรอกที่อยู่จัดส่ง");
         return;
       }
-      if (!form.customerPhone.trim()) {
-        alert("กรุณากรอกเบอร์โทรสำหรับการจัดส่ง");
+      const phoneNorm = normalizeThaiMobile10Digits(form.customerPhone);
+      if (!phoneNorm) {
+        alert("เบอร์โทรต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 (เช่น 0812345678)");
         return;
       }
+      customerPhonePayload = phoneNorm;
     }
 
     try {
@@ -258,7 +262,7 @@ export default function StaffPage() {
         km: form.delivery === "delivery" ? Number(form.km || 0) : null,
         zoneName: zone?.label || null,
         addr: form.addr,
-        customerPhone: form.customerPhone,
+        customerPhone: customerPhonePayload,
         deliveryAddress: form.deliveryAddress,
         note: form.note,
         wFee: workerFee,
@@ -498,12 +502,14 @@ export default function StaffPage() {
                 <label>เบอร์โทร</label>
                 <input
                   type="tel"
-                  inputMode="tel"
+                  inputMode="numeric"
                   autoComplete="tel"
                   required={form.delivery === "delivery"}
+                  title="ตัวเลข 10 หลัก ขึ้นต้นด้วย 0"
+                  maxLength={14}
                   value={form.customerPhone}
                   onChange={(e) => setForm({ ...form, customerPhone: e.target.value })}
-                  placeholder="081-234-5678"
+                  placeholder="0812345678"
                 />
               </div>
             </div>

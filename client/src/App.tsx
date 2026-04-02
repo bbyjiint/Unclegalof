@@ -40,7 +40,7 @@ export default function App() {
           <Route path="/repair" element={<RepairPage />} />
         </Route>
 
-        <Route element={<ProtectedRoute allowedRoles={["REPAIRS"]} />}>
+        <Route element={<ProtectedRoute allowedRoles={["OWNER", "REPAIRS"]} />}>
           <Route path="/deliveries" element={<DeliveryOrdersPage />} />
         </Route>
 

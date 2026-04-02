@@ -7,9 +7,9 @@ import { requireRole } from "../middleware/authorize.middleware.js";
 const router = Router();
 
 /**
- * GET /api/deliveries — REPAIRS only: recent orders that need home delivery (minimal fields for drivers).
+ * GET /api/deliveries — OWNER + REPAIRS: home delivery orders (minimal fields for drivers).
  */
-router.get("/", authenticate, requireRole(UserRole.REPAIRS), async (_req, res, next) => {
+router.get("/", authenticate, requireRole(UserRole.OWNER, UserRole.REPAIRS), async (_req, res, next) => {
   try {
     const rows = await prisma.saleRecord.findMany({
       where: { deliveryType: "delivery" },

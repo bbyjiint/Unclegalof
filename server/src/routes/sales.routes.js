@@ -6,7 +6,7 @@ import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwner, requireSales } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
-import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
+import { saleRecordToSale, salePayloadToSaleRecord, normalizeCustomerPhoneThai10 } from "../lib/adapters.js";
 import { getCanonicalCompanyOwnerId } from "../lib/company.js";
 import { getAverageRecordedCost } from "../lib/inventoryCost.js";
 import {
@@ -70,11 +70,11 @@ const frontendSaleSchema = z
       });
     }
 
-    if (!String(data.customerPhone ?? "").trim()) {
+    if (!normalizeCustomerPhoneThai10(data.customerPhone)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["customerPhone"],
-        message: "Phone number is required for delivery",
+        message: "Phone must be 10 digits starting with 0",
       });
     }
   });

@@ -21,7 +21,7 @@ export function canAccessRoute(role: UserRole, path: string): boolean {
     if (path.startsWith("/owner")) {
       return true;
     }
-    return ["/staff", "/inventory", "/repair"].includes(path);
+    return ["/staff", "/inventory", "/repair", "/deliveries"].includes(path);
   }
 
   if (path === "/owner" || path.startsWith("/owner/")) {
@@ -37,7 +37,7 @@ export function canAccessRoute(role: UserRole, path: string): boolean {
   }
 
   if (path === "/deliveries") {
-    return role === "REPAIRS";
+    return role === "OWNER" || role === "REPAIRS";
   }
 
   return false;
