@@ -134,6 +134,8 @@ model SaleRecord {
   /// (amount - workerFee) - cogsTotal — product gross profit snapshot.
   grossProfit          Int                    @default(0)
   deliveryType         DeliveryMethod         @default(selfpickup)
+  /// Set when driver marks home delivery as done (hidden from pending delivery queue).
+  deliveryCompletedAt  DateTime?
   deliveryRange        Int?
   workerFee            Int                    @default(0)
   workerFeeType        String?

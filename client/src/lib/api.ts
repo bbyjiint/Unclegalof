@@ -280,6 +280,8 @@ export const api = {
     request(`/sales/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteSale: (id: string) => request(`/sales/${id}`, { method: "DELETE" }),
   deliveryOrders: () => request<{ orders: DeliveryOrderRow[] }>("/deliveries"),
+  completeDeliveryOrder: (id: string) =>
+    request<{ ok: boolean; deliveryCompletedAt: string | null }>(`/deliveries/${id}/complete`, { method: "PATCH" }),
   presignUpload: (payload: PresignUploadPayload) =>
     request<PresignedUploadResponse>("/uploads/presign-upload", { method: "POST", body: JSON.stringify(payload) }),
   saveUploadMetadata: (payload: SaveUploadMetadataPayload) =>

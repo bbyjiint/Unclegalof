@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MapPin, Phone, Truck, User } from "lucide-react";
+import { CheckCircle2, MapPin, Phone, Truck, User } from "lucide-react";
 import { api } from "../lib/api";
 import { formatMoney } from "../data/constants";
 import type { DeliveryOrderRow } from "../types";
@@ -13,10 +13,33 @@ function formatSaleDate(iso: string): string {
   }
 }
 
+/** Renders plain text with http(s) URLs as clickable links (e.g. Google Maps). */
+function DeliveryAddressText({ text }: { text: string | null | undefined }) {
+  const t = text?.trim();
+  if (!t) {
+    return <>—</>;
+  }
+  const parts = t.split(/(https?:\/\/\S+)/g);
+  return (
+    <div style={{ fontSize: 14, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      {parts.map((part, i) =>
+        /^https?:\/\//.test(part) ? (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer">
+            {part}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </div>
+  );
+}
+
 export default function DeliveryOrdersPage() {
   const [orders, setOrders] = useState<DeliveryOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [completingId, setCompletingId] = useState<string | null>(null);
 
   async function load(): Promise<void> {
     setLoading(true);
@@ -34,6 +57,22 @@ export default function DeliveryOrdersPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  async function handleCompleteDelivery(id: string): Promise<void> {
+    const ok = window.confirm("ยืนยันว่าจัดส่งถึงลูกค้าแล้ว? รายการนี้จะออกจากคิวจัดส่ง");
+    if (!ok) {
+      return;
+    }
+    setCompletingId(id);
+    try {
+      await api.completeDeliveryOrder(id);
+      setOrders((prev) => prev.filter((row) => row.id !== id));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setCompletingId(null);
+    }
+  }
 
   return (
     <main className="wrap">
@@ -54,7 +93,7 @@ export default function DeliveryOrdersPage() {
       </div>
 
       <p style={{ margin: "0 0 16px", color: "var(--muted)", fontSize: 14 }}>
-        แสดงเฉพาะออเดอร์ที่เลือกส่งถึงบ้าน — ข้อมูลสำหรับติดต่อและนำส่ง
+        แสดงเฉพาะคิวที่ยังไม่ส่ง — กด &quot;จัดส่งสำเร็จ&quot; เมื่อส่งถึงลูกค้าแล้ว
       </p>
 
       {loading ? (
@@ -111,10 +150,21 @@ export default function DeliveryOrdersPage() {
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                   <MapPin size={16} strokeWidth={2} style={{ marginTop: 2, flexShrink: 0, opacity: 0.7 }} aria-hidden />
                   <div>
-                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--muted)" }}>ที่อยู่</div>
-                    <div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{o.deliveryAddress?.trim() || "—"}</div>
+                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--muted)" }}>ที่อยู่ / แผนที่</div>
+                    <DeliveryAddressText text={o.deliveryAddress} />
                   </div>
                 </div>
+              </div>
+              <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="btnok"
+                  disabled={completingId === o.id}
+                  onClick={() => void handleCompleteDelivery(o.id)}
+                >
+                  <CheckCircle2 size={18} strokeWidth={2} aria-hidden />
+                  {completingId === o.id ? "กำลังบันทึก..." : "จัดส่งสำเร็จ"}
+                </button>
               </div>
             </article>
           ))}

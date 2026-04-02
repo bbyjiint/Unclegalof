@@ -237,7 +237,7 @@ export default function StaffPage() {
         return;
       }
       if (!form.deliveryAddress.trim()) {
-        alert("กรุณากรอกที่อยู่จัดส่ง");
+        alert("กรุณากรอกลิงค์กูเกิ้ลแมพหรือที่อยู่จัดส่ง");
         return;
       }
       const phoneNorm = normalizeThaiMobile10Digits(form.customerPhone);
@@ -515,12 +515,12 @@ export default function StaffPage() {
             </div>
             <div className="frow s1">
               <div className="fg">
-                <label>ที่อยู่จัดส่ง</label>
+                <label>ลิงค์กูเกิ้ลแมพ</label>
                 <textarea
                   required={form.delivery === "delivery"}
                   value={form.deliveryAddress}
                   onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
-                  placeholder="บ้านเลขที่ ซอย ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
+                  placeholder="ลิงค์กูเกิ้ลแมพ — วางลิงก์จาก Google Maps"
                   rows={3}
                 />
               </div>
