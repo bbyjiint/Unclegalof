@@ -524,6 +524,12 @@ export default function StaffPage() {
                     {getPayStatusLabel(sale.payStatus)}
                   </span>
                 </div>
+                <div className="smeta" style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
+                  บันทึกโดย {sale.createdByName || sale.createdByUsername || "—"}
+                  {sale.recordedAt
+                    ? ` · ${new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
+                    : null}
+                </div>
               </div>
               <div className="sitem-right">
                 <div className="sprice">{formatMoney(sale.grandTotal)}</div>

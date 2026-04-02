@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
+import { UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwner, requireSales } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
+import { getCanonicalCompanyOwnerId } from "../lib/company.js";
 import { deleteUploadedFileFromR2 } from "../lib/r2Cleanup.js";
 
 const router = Router();
@@ -78,11 +80,19 @@ const updateSaleStatusSchema = z.object({
   status: z.enum(["paid", "pending", "deposit"]),
 });
 
-function isSalesUser(req) {
-  return req.role === "SALES";
+/** OWNER sees all sales; SALES only their own rows (createdByUserId). */
+function assertSalesStaffOwnsRecordOrOwner(req, sale, res) {
+  if (req.role === UserRole.OWNER) {
+    return true;
+  }
+  if (sale.createdByUserId !== req.user.id) {
+    res.status(403).json({ error: "You can only access your own sales records" });
+    return false;
+  }
+  return true;
 }
 
-// GET /api/sales - Get sales for a month/year
+// GET /api/sales — OWNER: all sales in month; SALES: only records they created
 router.get(
   "/",
   authenticate,
@@ -100,7 +110,7 @@ router.get(
             gte: start,
             lt: end,
           },
-          ...(isSalesUser(req) ? { createdByUserId: req.user.id } : {}),
+          ...(req.role === UserRole.SALES ? { createdByUserId: req.user.id } : {}),
         },
         include: {
           promotion: true,
@@ -159,7 +169,9 @@ router.post(
         }
       }
 
-      const saleRecordData = salePayloadToSaleRecord(payload, deskItem.id);
+      const companyOwnerId = await getCanonicalCompanyOwnerId(prisma);
+      const saleRecordData = salePayloadToSaleRecord(payload, deskItem.id, companyOwnerId);
+      // Audit: who keyed this sale in (never overwritten by later slip/status edits).
       saleRecordData.createdByUserId = req.user.id;
       const saleDate = new Date(payload.date);
       const year = saleDate.getUTCFullYear();
@@ -234,8 +246,8 @@ router.patch(
         return res.status(404).json({ error: "Sale not found" });
       }
 
-      if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
-        return res.status(403).json({ error: "You can only modify your own sales records" });
+      if (!assertSalesStaffOwnsRecordOrOwner(req, sale, res)) {
+        return;
       }
 
       const previousSlipUrl = sale.paymentSlipImage;
@@ -300,8 +312,8 @@ router.delete(
         return res.status(404).json({ error: "Sale not found" });
       }
 
-      if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
-        return res.status(403).json({ error: "You can only modify your own sales records" });
+      if (!assertSalesStaffOwnsRecordOrOwner(req, sale, res)) {
+        return;
       }
 
       const previousSlipUrl = sale.paymentSlipImage;
@@ -401,6 +413,13 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
       });
 
@@ -425,6 +444,13 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
       });
 
@@ -453,8 +479,8 @@ router.delete(
         return res.status(404).json({ error: "Sale not found" });
       }
 
-      if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
-        return res.status(403).json({ error: "You can only delete your own sales records" });
+      if (!assertSalesStaffOwnsRecordOrOwner(req, sale, res)) {
+        return;
       }
 
       if (sale.paymentSlipImage) {

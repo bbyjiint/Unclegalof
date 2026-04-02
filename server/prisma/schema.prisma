@@ -67,6 +67,8 @@ model User {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   createdSales          SaleRecord[]
+  /// Sales belonging to this user as tenant owner (see SaleRecord.ownerId).
+  salesAsTenantOwner    SaleRecord[]           @relation("SaleTenant")
   repairRecordsReported RepairRecord[]
   saleCommissions       SaleRecordCommission[]
   payrollRecords        PayrollRecord[]
@@ -110,6 +112,8 @@ model Promotion {
 model SaleRecord {
   id                   String                 @id @default(uuid()) @db.Uuid
   createdAt            DateTime               @default(now())
+  /// Tenant: the OWNER user id this order belongs to.
+  ownerId              String                 @db.Uuid
   saleDate             DateTime
   orderNumber          String                 @unique
   deskType             String                 @db.Uuid
@@ -131,12 +135,14 @@ model SaleRecord {
   paymentSlipImage     String?                @db.Text
   slipViewedAt         DateTime?
   paidAt               DateTime?
+  /// User who created this sale row (audit / accountability); not cleared on shared edits.
   createdByUserId      String?                @db.Uuid
   deskItem             DeskItem               @relation(fields: [deskType], references: [id], onDelete: Restrict, onUpdate: Cascade)
   deliveryFee          DeliveryFee?           @relation(fields: [deliveryRange], references: [range])
   promotion            Promotion?             @relation(fields: [appliedPromotion], references: [id], onDelete: Restrict, onUpdate: Cascade)
   createdBy            User?                  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   commissions          SaleRecordCommission[]
+  tenantOwner          User                   @relation("SaleTenant", fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([saleDate])
   @@index([deskType])

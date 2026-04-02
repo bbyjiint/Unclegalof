@@ -1,10 +1,13 @@
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d"; // Default: 7 days
 
-if (!JWT_SECRET) {
-  throw new Error("JWT_SECRET environment variable is required");
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET environment variable is required");
+  }
+  return secret;
 }
 
 /**
@@ -16,13 +19,14 @@ if (!JWT_SECRET) {
  * @returns {string} JWT token
  */
 export function generateToken(payload) {
+  const secret = getJwtSecret();
   return jwt.sign(
     {
       userId: payload.userId,
       role: payload.role,
       username: payload.username,
     },
-    JWT_SECRET,
+    secret,
     {
       expiresIn: JWT_EXPIRES_IN,
       issuer: "tolopburi-api",
@@ -38,7 +42,8 @@ export function generateToken(payload) {
  */
 export function verifyToken(token) {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, {
+    const secret = getJwtSecret();
+    const decoded = jwt.verify(token, secret, {
       issuer: "tolopburi-api",
       audience: "tolopburi-client",
     });

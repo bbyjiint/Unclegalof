@@ -1,13 +1,20 @@
+import { lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import AppShell from "./components/AppShell";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicOnlyRoute from "./components/PublicOnlyRoute";
 import InventoryPage from "./pages/InventoryPage";
-import OwnerPage from "./pages/OwnerPage";
+import OwnerDashboardLayout from "./pages/owner/OwnerDashboardLayout";
 import RepairPage from "./pages/RepairPage";
 import StaffPage from "./pages/StaffPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+
+const OwnerOverviewTab = lazy(() => import("./pages/owner/tabs/OwnerOverviewTab"));
+const OwnerEmployeesTab = lazy(() => import("./pages/owner/tabs/OwnerEmployeesTab"));
+const OwnerPromotionsTab = lazy(() => import("./pages/owner/tabs/OwnerPromotionsTab"));
+const OwnerPurchasingTab = lazy(() => import("./pages/owner/tabs/OwnerPurchasingTab"));
+const OwnerReportsTab = lazy(() => import("./pages/owner/tabs/OwnerReportsTab"));
 
 export default function App() {
   return (
@@ -32,7 +39,13 @@ export default function App() {
         </Route>
 
         <Route element={<ProtectedRoute allowedRoles={["OWNER"]} />}>
-          <Route path="/owner" element={<OwnerPage />} />
+          <Route path="/owner" element={<OwnerDashboardLayout />}>
+            <Route index element={<OwnerOverviewTab />} />
+            <Route path="employees" element={<OwnerEmployeesTab />} />
+            <Route path="promotions" element={<OwnerPromotionsTab />} />
+            <Route path="purchasing" element={<OwnerPurchasingTab />} />
+            <Route path="reports" element={<OwnerReportsTab />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

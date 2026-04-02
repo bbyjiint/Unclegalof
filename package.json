@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "node scripts/dev.js",
+    "start": "npm run start --workspace server",
     "dev:client": "npm run dev --workspace client",
     "dev:server": "npm run dev --workspace server",
     "docker:up": "sh scripts/docker.sh up --build",

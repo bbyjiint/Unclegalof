@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
+import { InventoryDirection } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwner } from "../middleware/authorize.middleware.js";
 import { saleRecordToSale, promotionToFrontend } from "../lib/adapters.js";
+import { getAllActiveUserIds } from "../lib/company.js";
 import { findAllPromotionsRows } from "../lib/promotions.db.js";
 
 const router = Router();
@@ -26,8 +28,10 @@ router.get(
       const year = Number(req.query.year);
       const start = new Date(Date.UTC(year, month - 1, 1));
       const end = new Date(Date.UTC(year, month, 1));
-      
-      // Get sales for the month
+
+      const tenantUserIds = await getAllActiveUserIds(prisma);
+
+      // Get sales for the month (whole company)
       const saleRecords = await prisma.saleRecord.findMany({
         where: {
           saleDate: {
@@ -39,6 +43,13 @@ router.get(
           promotion: true,
           deskItem: true,
           commissions: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       });
@@ -59,32 +70,32 @@ router.get(
         return sum + saleCommissions;
       }, 0);
       
-      // Get payroll records for the month
+      // Get payroll records for the month (workers under this tenant)
       const payrollRecords = await prisma.payrollRecord.findMany({
         where: {
           year,
           month,
+          userId: { in: tenantUserIds },
         },
       });
       
       const baseCosts = payrollRecords.reduce((sum, pr) => sum + pr.baseSalary + (pr.bonus || 0) - (pr.deduction || 0), 0);
 
-      const lotsReceivedInMonth = await prisma.inventoryLot.findMany({
+      const stockInMovements = await prisma.inventoryMovement.findMany({
         where: {
+          direction: InventoryDirection.IN,
+          createdByUserId: { in: tenantUserIds },
           createdAt: {
             gte: start,
             lt: end,
           },
         },
-        select: {
-          qty: true,
-          costPerUnit: true,
-        },
+        include: { lot: true },
       });
-      const inventoryCost = lotsReceivedInMonth.reduce(
-        (sum, lot) => sum + lot.qty * lot.costPerUnit,
-        0
-      );
+      const inventoryCost = stockInMovements.reduce((sum, m) => {
+        const cpu = m.lot?.costPerUnit ?? 0;
+        return sum + m.qty * cpu;
+      }, 0);
 
       const cost = inventoryCost + workerCost + baseCosts;
       const profit = income - cost;

@@ -1,5 +1,6 @@
 import { verifyToken, extractTokenFromHeader } from "../lib/jwt.js";
 import { prisma } from "../lib/prisma.js";
+import { getTenantOwnerId } from "../lib/tenant.js";
 
 /**
  * Authentication middleware - verifies JWT token and attaches user to request
@@ -29,6 +30,7 @@ export async function authenticate(req, res, next) {
         phone: true,
         isActive: true,
         role: true,
+        ownerId: true,
       },
     });
 
@@ -36,9 +38,12 @@ export async function authenticate(req, res, next) {
       return res.status(401).json({ error: "User not found or inactive" });
     }
 
+    const tenantOwnerId = getTenantOwnerId(user);
+
     // Attach user info to request
     req.user = user;
     req.role = user.role;
+    req.tenantOwnerId = tenantOwnerId;
 
     next();
   } catch (error) {
@@ -69,12 +74,21 @@ export async function optionalAuthenticate(req, res, next) {
     const decoded = verifyToken(token);
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, username: true, fullName: true, phone: true, isActive: true, role: true },
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        phone: true,
+        isActive: true,
+        role: true,
+        ownerId: true,
+      },
     });
 
     if (user && user.isActive) {
       req.user = user;
       req.role = user.role;
+      req.tenantOwnerId = getTenantOwnerId(user);
     }
 
     next();

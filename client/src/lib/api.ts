@@ -14,10 +14,13 @@ import type {
   RepairsResponse,
   RepairStatus,
   SalesResponse,
-  StoredFilePurpose
+  StoredFilePurpose,
+  ReportsSummaryResponse
 } from "../types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.PROD ? "https://unclegalof-server.vercel.app/api" : "/api");
 
 type RequestOptions = RequestInit & {
   headers?: HeadersInit;
@@ -25,6 +28,7 @@ type RequestOptions = RequestInit & {
 
 type RegistrationStatusResponse = {
   allowOwnerSignup: boolean;
+  allowPublicStaffSignup?: boolean;
 };
 
 type StaffListResponse = {
@@ -257,6 +261,11 @@ export const api = {
   // Dashboard
   ownerDashboard: (month: number, year: number) =>
     request<OwnerDashboard>(`/dashboard/owner?month=${month}&year=${year}`),
+
+  // Sales list alias + reports (tenant-scoped on server)
+  orders: (month: number, year: number) => request<SalesResponse>(`/orders?month=${month}&year=${year}`),
+  reports: (month: number, year: number) =>
+    request<ReportsSummaryResponse>(`/reports?month=${month}&year=${year}`),
 
   // Pipeline (owner/admin)
   pipeline: () => request<{ items: PipelineItem[] }>("/pipeline"),
