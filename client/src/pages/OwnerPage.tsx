@@ -139,6 +139,32 @@ export default function OwnerPage() {
     }
   }
 
+  async function viewPaymentSlipAndMark(saleId: string, imageSrc: string): Promise<void> {
+    setSlipPreviewSrc(imageSrc);
+    try {
+      await api.markSaleSlipViewed(saleId);
+      await loadPage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "บันทึกสถานะการดูสลิปไม่สำเร็จ");
+    }
+  }
+
+  async function removePaymentSlipByOwner(saleId: string): Promise<void> {
+    const confirmed = window.confirm("ลบสลิปที่แนบไว้รายการนี้?");
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setUpdatingSaleId(saleId);
+      await api.removeSalePaymentSlip(saleId);
+      await loadPage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ลบสลิปไม่สำเร็จ");
+    } finally {
+      setUpdatingSaleId(null);
+    }
+  }
+
   async function addPipeline(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setError(null);
@@ -818,29 +844,74 @@ export default function OwnerPage() {
                     <td>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
                         {sale.paymentSlipImage ? (
-                          <button
-                            type="button"
-                            className="btnok"
-                            style={{ padding: "6px 12px", fontSize: 13 }}
-                            onClick={() => {
-                              setSlipPreviewSrc(sale.paymentSlipImage!);
-                            }}
-                          >
-                            ดูสลิป
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className="btnok"
+                              style={{ padding: "6px 12px", fontSize: 13 }}
+                              onClick={() => {
+                                void viewPaymentSlipAndMark(sale.id, sale.paymentSlipImage!);
+                              }}
+                            >
+                              ดูสลิป
+                            </button>
+                            <button
+                              type="button"
+                              className="btnwarn"
+                              style={{ padding: "6px 12px", fontSize: 13 }}
+                              onClick={() => {
+                                void removePaymentSlipByOwner(sale.id);
+                              }}
+                              disabled={updatingSaleId === sale.id}
+                            >
+                              ลบสลิป
+                            </button>
+                          </>
                         ) : (
                           <span style={{ opacity: 0.7 }}>ไม่มีสลิป</span>
                         )}
                         <button
                           type="button"
                           className="btnok"
-                          disabled={sale.payStatus === "paid" || !sale.paymentSlipImage || updatingSaleId === sale.id}
+                          disabled={
+                            sale.payStatus === "paid" ||
+                            !sale.paymentSlipImage ||
+                            !sale.slipViewedAt ||
+                            updatingSaleId === sale.id
+                          }
                           onClick={() => {
                             void confirmSalePaid(sale.id);
                           }}
                         >
                           {sale.payStatus === "paid" ? "ชำระแล้ว" : updatingSaleId === sale.id ? "กำลังอัปเดต..." : "ยืนยันชำระ"}
                         </button>
+                      </div>
+                      <div style={{ marginTop: 6, textAlign: "center" }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            fontSize: 12,
+                            fontWeight: 600,
+                            padding: "2px 8px",
+                            borderRadius: 999,
+                            background: !sale.paymentSlipImage
+                              ? "rgba(128,128,128,0.15)"
+                              : sale.slipViewedAt
+                                ? "rgba(46,125,50,0.16)"
+                                : "rgba(245,124,0,0.18)",
+                            color: !sale.paymentSlipImage
+                              ? "#666"
+                              : sale.slipViewedAt
+                                ? "#1b5e20"
+                                : "#b45309",
+                          }}
+                        >
+                          {!sale.paymentSlipImage
+                            ? "ยังไม่มีสลิป"
+                            : sale.slipViewedAt
+                              ? "ดูสลิปแล้ว"
+                              : "ยังไม่ดูสลิป"}
+                        </span>
                       </div>
                     </td>
                   </tr>

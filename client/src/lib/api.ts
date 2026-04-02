@@ -4,6 +4,7 @@ import type {
   AuthUser,
   StaffMember,
   InventorySummaryResponse,
+  PresignedUploadResponse,
   ProductItem,
   OwnerDashboard,
   PipelineItem,
@@ -12,7 +13,8 @@ import type {
   PromotionsResponse,
   RepairsResponse,
   RepairStatus,
-  SalesResponse
+  SalesResponse,
+  StoredFilePurpose
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -56,7 +58,11 @@ type CreateRepairPayload = {
 };
 
 type UploadRepairImagePayload = {
-  imageData: string;
+  fileUrl: string;
+};
+
+type RemoveRepairImagePayload = {
+  fileUrl: string;
 };
 
 type AddInventoryStockPayload = {
@@ -92,7 +98,21 @@ type CreateSalePayload = {
 };
 
 type UploadSalePaymentSlipPayload = {
-  imageData: string;
+  fileUrl: string;
+};
+
+type PresignUploadPayload = {
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  purpose: StoredFilePurpose;
+};
+
+type SaveUploadMetadataPayload = PresignUploadPayload & {
+  objectKey: string;
+  fileUrl: string;
+  bucketName: string;
+  originalFileName: string;
 };
 
 type UpdateSaleStatusPayload = {
@@ -200,6 +220,8 @@ export const api = {
     request("/repairs", { method: "POST", body: JSON.stringify(payload) }),
   uploadRepairImage: (id: string, payload: UploadRepairImagePayload) =>
     request(`/repairs/${id}/images`, { method: "PATCH", body: JSON.stringify(payload) }),
+  removeRepairImage: (id: string, payload: RemoveRepairImagePayload) =>
+    request(`/repairs/${id}/images`, { method: "DELETE", body: JSON.stringify(payload) }),
   updateRepairStatus: (id: string, status: RepairStatus) =>
     request(`/repairs/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   deleteRepair: (id: string) => request(`/repairs/${id}`, { method: "DELETE" }),
@@ -220,9 +242,17 @@ export const api = {
   createSale: (payload: CreateSalePayload) => request("/sales", { method: "POST", body: JSON.stringify(payload) }),
   uploadSalePaymentSlip: (id: string, payload: UploadSalePaymentSlipPayload) =>
     request(`/sales/${id}/payment-slip`, { method: "PATCH", body: JSON.stringify(payload) }),
+  removeSalePaymentSlip: (id: string) =>
+    request(`/sales/${id}/payment-slip`, { method: "DELETE" }),
+  markSaleSlipViewed: (id: string) =>
+    request(`/sales/${id}/slip-viewed`, { method: "PATCH" }),
   updateSaleStatus: (id: string, payload: UpdateSaleStatusPayload) =>
     request(`/sales/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteSale: (id: string) => request(`/sales/${id}`, { method: "DELETE" }),
+  presignUpload: (payload: PresignUploadPayload) =>
+    request<PresignedUploadResponse>("/uploads/presign-upload", { method: "POST", body: JSON.stringify(payload) }),
+  saveUploadMetadata: (payload: SaveUploadMetadataPayload) =>
+    request("/uploads/save-metadata", { method: "POST", body: JSON.stringify(payload) }),
   
   // Dashboard
   ownerDashboard: (month: number, year: number) =>

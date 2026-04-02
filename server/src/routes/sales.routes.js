@@ -6,6 +6,7 @@ import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwner, requireSales } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
+import { deleteUploadedFileFromR2 } from "../lib/r2Cleanup.js";
 
 const router = Router();
 
@@ -70,7 +71,7 @@ const paramsIdSchema = z.object({
 });
 
 const uploadPaymentSlipSchema = z.object({
-  imageData: z.string().min(1),
+  fileUrl: z.string().url(),
 });
 
 const updateSaleStatusSchema = z.object({
@@ -211,7 +212,7 @@ router.patch(
   async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { imageData } = req.body;
+      const { fileUrl } = req.body;
 
       const sale = await prisma.saleRecord.findUnique({
         where: { id },
@@ -237,10 +238,129 @@ router.patch(
         return res.status(403).json({ error: "You can only modify your own sales records" });
       }
 
+      const previousSlipUrl = sale.paymentSlipImage;
+      if (previousSlipUrl && previousSlipUrl !== fileUrl) {
+        await deleteUploadedFileFromR2(previousSlipUrl);
+      }
+
       const updatedSale = await prisma.saleRecord.update({
         where: { id },
         data: {
-          paymentSlipImage: imageData,
+          paymentSlipImage: fileUrl,
+          slipViewedAt: null,
+        },
+        include: {
+          promotion: true,
+          deskItem: true,
+          deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
+        },
+      });
+
+      res.json(saleRecordToSale(updatedSale));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.delete(
+  "/:id/payment-slip",
+  authenticate,
+  requireSales,
+  writeRateLimiter,
+  validate(paramsIdSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      const sale = await prisma.saleRecord.findUnique({
+        where: { id },
+        include: {
+          promotion: true,
+          deskItem: true,
+          deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
+        },
+      });
+
+      if (!sale) {
+        return res.status(404).json({ error: "Sale not found" });
+      }
+
+      if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
+        return res.status(403).json({ error: "You can only modify your own sales records" });
+      }
+
+      const previousSlipUrl = sale.paymentSlipImage;
+      if (previousSlipUrl) {
+        await deleteUploadedFileFromR2(previousSlipUrl);
+      }
+
+      const updatedSale = await prisma.saleRecord.update({
+        where: { id },
+        data: {
+          paymentSlipImage: null,
+          slipViewedAt: null,
+        },
+        include: {
+          promotion: true,
+          deskItem: true,
+          deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
+        },
+      });
+
+      res.json(saleRecordToSale(updatedSale));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.patch(
+  "/:id/slip-viewed",
+  authenticate,
+  requireOwner,
+  validate(paramsIdSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      const sale = await prisma.saleRecord.findUnique({
+        where: { id },
+      });
+
+      if (!sale) {
+        return res.status(404).json({ error: "Sale not found" });
+      }
+
+      if (!sale.paymentSlipImage) {
+        return res.status(400).json({ error: "Cannot mark slip as viewed when no payment slip exists" });
+      }
+
+      const updatedSale = await prisma.saleRecord.update({
+        where: { id },
+        data: {
+          slipViewedAt: new Date(),
         },
         include: {
           promotion: true,
@@ -291,6 +411,9 @@ router.patch(
       if (status === "paid" && !sale.paymentSlipImage) {
         return res.status(400).json({ error: "Payment slip image is required before marking as paid" });
       }
+      if (status === "paid" && !sale.slipViewedAt) {
+        return res.status(400).json({ error: "Please review the payment slip before confirming payment" });
+      }
 
       const updatedSale = await prisma.saleRecord.update({
         where: { id },
@@ -333,7 +456,11 @@ router.delete(
       if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
         return res.status(403).json({ error: "You can only delete your own sales records" });
       }
-      
+
+      if (sale.paymentSlipImage) {
+        await deleteUploadedFileFromR2(sale.paymentSlipImage);
+      }
+
       await prisma.saleRecord.delete({
         where: { id: sale.id },
       });

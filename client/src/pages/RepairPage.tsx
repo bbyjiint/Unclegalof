@@ -10,20 +10,12 @@ import {
   X
 } from "lucide-react";
 import { api } from "../lib/api";
+import { uploadFileToR2 } from "../lib/upload";
 import type { RepairItem, RepairKind, RepairStatus } from "../types";
 
 type PendingRepairPhoto = { file: File; url: string };
 
 const MAX_REPAIR_PHOTOS = 8;
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("Failed to read image file"));
-    reader.readAsDataURL(file);
-  });
-}
 
 type RepairFormState = {
   type: string;
@@ -87,7 +79,7 @@ export default function RepairPage() {
     try {
       const images =
         newRepairPhotos.length > 0
-          ? await Promise.all(newRepairPhotos.map((p) => readFileAsDataUrl(p.file)))
+          ? await Promise.all(newRepairPhotos.map((p) => uploadFileToR2(p.file, "REPAIR_IMAGE")))
           : undefined;
 
       await api.createRepair({
@@ -158,8 +150,8 @@ export default function RepairPage() {
     }
     try {
       setUploadingRepairId(repairId);
-      const imageData = await readFileAsDataUrl(file);
-      await api.uploadRepairImage(repairId, { imageData });
+      const fileUrl = await uploadFileToR2(file, "REPAIR_IMAGE");
+      await api.uploadRepairImage(repairId, { fileUrl });
       await loadRepairs();
     } catch (error) {
       console.error("Failed to upload repair photo:", error);
@@ -187,6 +179,23 @@ export default function RepairPage() {
     } catch (error) {
       console.error("Failed to delete repair:", error);
       alert(error instanceof Error ? error.message : "Failed to delete repair");
+    }
+  }
+
+  async function removeRepairPhoto(repairId: string, fileUrl: string): Promise<void> {
+    const confirmed = window.confirm("ลบรูปภาพนี้ออกจากรายการซ่อม/เคลม?");
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setUploadingRepairId(repairId);
+      await api.removeRepairImage(repairId, { fileUrl });
+      await loadRepairs();
+    } catch (error) {
+      console.error("Failed to remove repair photo:", error);
+      alert(error instanceof Error ? error.message : "Failed to remove repair photo");
+    } finally {
+      setUploadingRepairId(null);
     }
   }
 
@@ -338,13 +347,39 @@ export default function RepairPage() {
               {(item.images?.length ?? 0) > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
                   {item.images!.map((src, idx) => (
-                    <a key={`${item.id}-img-${idx}`} href={src} target="_blank" rel="noreferrer">
-                      <img
-                        src={src}
-                        alt={`รูป ${idx + 1}`}
-                        style={{ width: 88, height: 88, objectFit: "cover", borderRadius: 8, display: "block" }}
-                      />
-                    </a>
+                    <div key={`${item.id}-img-${idx}`} style={{ position: "relative" }}>
+                      <a href={src} target="_blank" rel="noreferrer">
+                        <img
+                          src={src}
+                          alt={`รูป ${idx + 1}`}
+                          style={{ width: 88, height: 88, objectFit: "cover", borderRadius: 8, display: "block" }}
+                        />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void removeRepairPhoto(item.id, src);
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: -6,
+                          right: -6,
+                          width: 22,
+                          height: 22,
+                          borderRadius: "50%",
+                          border: "none",
+                          background: "var(--dark)",
+                          color: "#fff",
+                          fontSize: 12,
+                          cursor: "pointer",
+                          lineHeight: 1,
+                        }}
+                        aria-label="ลบรูปนี้"
+                        disabled={uploadingRepairId === item.id}
+                      >
+                        <X size={14} strokeWidth={2.5} aria-hidden />
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}

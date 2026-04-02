@@ -48,6 +48,11 @@ enum PipelinePriority {
   low
 }
 
+enum StoredFilePurpose {
+  PAYMENT_SLIP
+  REPAIR_IMAGE
+}
+
 model User {
   id                    String                 @id @default(uuid()) @db.Uuid
   fullName              String
@@ -66,6 +71,7 @@ model User {
   saleCommissions       SaleRecordCommission[]
   payrollRecords        PayrollRecord[]
   inventoryMovements    InventoryMovement[]
+  uploadedFiles         R2File[]
 }
 
 model DeskItem {
@@ -123,6 +129,7 @@ model SaleRecord {
   deliveryAddress      String?                @db.Text
   remarks              String?
   paymentSlipImage     String?                @db.Text
+  slipViewedAt         DateTime?
   paidAt               DateTime?
   createdByUserId      String?                @db.Uuid
   deskItem             DeskItem               @relation(fields: [deskType], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -151,7 +158,7 @@ model RepairRecord {
   kind         String       @default("repair")
   status       String       @default("open")
   amount       Int
-  /// Base64 data URLs (data:image/...), same pattern as SaleRecord.paymentSlipImage
+  /// Public image URLs stored in Cloudflare R2.
   images       Json         @default("[]")
   deskItem     DeskItem     @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   reporter     User         @relation(fields: [reportedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -248,4 +255,22 @@ model PipelineItem {
   @@index([deskItemId])
   @@index([status])
   @@index([expectedDate])
+}
+
+model R2File {
+  id               String            @id @default(uuid()) @db.Uuid
+  objectKey        String            @unique
+  fileUrl          String
+  bucketName       String
+  originalFileName String
+  contentType      String
+  fileSize         Int
+  purpose          StoredFilePurpose
+  uploadedByUserId String            @db.Uuid
+  createdAt        DateTime          @default(now())
+  uploadedBy       User              @relation(fields: [uploadedByUserId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([uploadedByUserId])
+  @@index([purpose])
+  @@index([createdAt])
 }

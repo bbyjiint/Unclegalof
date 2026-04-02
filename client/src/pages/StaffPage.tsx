@@ -15,6 +15,7 @@ import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { formatMoney, getZoneByKm, DELIVERY_ZONES } from "../data/constants";
 import { api } from "../lib/api";
 import { formatPromoValueLabel, promoUnitDiscountBaht } from "../lib/promotions";
+import { uploadFileToR2 } from "../lib/upload";
 import type { DeliveryMode, PayStatus, Promotion, Sale } from "../types";
 
 type StaffFormState = {
@@ -253,6 +254,23 @@ export default function StaffPage() {
     }
   }
 
+  async function handleRemovePaymentSlip(saleId: string): Promise<void> {
+    const confirmed = window.confirm("ลบสลิปที่แนบไว้รายการนี้?");
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setUploadingSaleId(saleId);
+      await api.removeSalePaymentSlip(saleId);
+      await loadPage();
+    } catch (error) {
+      console.error("Failed to remove payment slip:", error);
+      alert(error instanceof Error ? error.message : "Failed to remove payment slip");
+    } finally {
+      setUploadingSaleId(null);
+    }
+  }
+
   function openPaymentSlipPicker(saleId: string) {
     paymentSlipInputRefs.current[saleId]?.click();
   }
@@ -272,15 +290,8 @@ export default function StaffPage() {
 
     try {
       setUploadingSaleId(saleId);
-
-      const imageData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Failed to read image file"));
-        reader.readAsDataURL(file);
-      });
-
-      await api.uploadSalePaymentSlip(saleId, { imageData });
+      const fileUrl = await uploadFileToR2(file, "PAYMENT_SLIP");
+      await api.uploadSalePaymentSlip(saleId, { fileUrl });
       await loadPage();
     } catch (error) {
       console.error("Failed to upload payment slip:", error);
@@ -549,13 +560,25 @@ export default function StaffPage() {
                     )}
                   </button>
                   {sale.paymentSlipImage && (
-                    <button
-                      type="button"
-                      className="sale-slip-link sale-slip-link--staff"
-                      onClick={() => setSlipPreviewSrc(sale.paymentSlipImage!)}
-                    >
-                      ดูสลิป
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="sale-slip-link sale-slip-link--staff"
+                        onClick={() => setSlipPreviewSrc(sale.paymentSlipImage!)}
+                      >
+                        ดูสลิป
+                      </button>
+                      <button
+                        type="button"
+                        className="sale-slip-link sale-slip-link--staff"
+                        onClick={() => {
+                          void handleRemovePaymentSlip(sale.id);
+                        }}
+                        disabled={uploadingSaleId === sale.id}
+                      >
+                        ลบสลิป
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

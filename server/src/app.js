@@ -8,6 +8,7 @@ import promotionsRoutes from "./routes/promotions.routes.js";
 import repairsRoutes from "./routes/repairs.routes.js";
 import salesRoutes from "./routes/sales.routes.js";
 import authRoutes from "./routes/auth.routes.js";
+import uploadsRoutes from "./routes/uploads.routes.js";
 import { generalRateLimiter } from "./middleware/rateLimit.middleware.js";
 
 function parseAllowedOrigins(value) {
@@ -53,7 +54,7 @@ export function createApp() {
     next();
   });
 
-  // Security: Body parser with size limit (repairs / payment slips may include several base64 images)
+  // Security: Body parser with size limit for regular JSON requests
   app.use(express.json({ limit: bodyLimit }));
   app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
 
@@ -69,6 +70,7 @@ export function createApp() {
   app.use("/api/auth", authRoutes);
 
   // Protected routes (require authentication - will be added per route)
+  app.use("/api/uploads", uploadsRoutes);
   app.use("/api/catalog", catalogRoutes);
   app.use("/api/promotions", promotionsRoutes);
   app.use("/api/repairs", repairsRoutes);
