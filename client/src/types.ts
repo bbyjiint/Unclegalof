@@ -63,6 +63,8 @@ export interface Sale {
   paymentSlipImage?: string | null;
   slipViewedAt?: string | null;
   paidAt?: string | null;
+  /** ISO timestamp when the sale row was first saved (server `createdAt`). */
+  recordedAt?: string | null;
   createdByUserId?: string | null;
   createdByUsername?: string | null;
   createdByName?: string | null;

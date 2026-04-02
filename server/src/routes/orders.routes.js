@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireStaff, requireTenant } from "../middleware/authorize.middleware.js";
+import { requireSales } from "../middleware/authorize.middleware.js";
 import { saleRecordToSale } from "../lib/adapters.js";
 
 const router = Router();
@@ -15,13 +15,12 @@ const queryMonthYearSchema = z.object({
 
 /**
  * GET /api/orders?month=&year=
- * Orders for the current tenant (same underlying data as sales list).
+ * Same data as sales list (whole company).
  */
 router.get(
   "/",
   authenticate,
-  requireTenant,
-  requireStaff,
+  requireSales,
   validate(queryMonthYearSchema, "query"),
   async (req, res, next) => {
     try {
@@ -32,7 +31,6 @@ router.get(
 
       const saleRecords = await prisma.saleRecord.findMany({
         where: {
-          ownerId: req.tenantOwnerId,
           saleDate: {
             gte: start,
             lt: end,

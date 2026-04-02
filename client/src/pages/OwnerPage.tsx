@@ -830,6 +830,7 @@ export default function OwnerPage() {
                   <th>ชุด</th>
                   <th>ยอดรวม</th>
                   <th>สถานะ</th>
+                  <th>ผู้บันทึก</th>
                   <th>สลิป/ยืนยัน</th>
                 </tr>
               </thead>
@@ -841,6 +842,17 @@ export default function OwnerPage() {
                     <td>{sale.qty}</td>
                     <td>{formatMoney(sale.grandTotal)}</td>
                     <td>{sale.payStatus}</td>
+                    <td>
+                      <div>{sale.createdByName || sale.createdByUsername || "—"}</div>
+                      {sale.recordedAt ? (
+                        <div className="csub" style={{ fontSize: 11 }}>
+                          {new Date(sale.recordedAt).toLocaleString("th-TH", {
+                            dateStyle: "short",
+                            timeStyle: "short"
+                          })}
+                        </div>
+                      ) : null}
+                    </td>
                     <td>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
                         {sale.paymentSlipImage ? (

@@ -135,6 +135,7 @@ model SaleRecord {
   paymentSlipImage     String?                @db.Text
   slipViewedAt         DateTime?
   paidAt               DateTime?
+  /// User who created this sale row (audit / accountability); not cleared on shared edits.
   createdByUserId      String?                @db.Uuid
   deskItem             DeskItem               @relation(fields: [deskType], references: [id], onDelete: Restrict, onUpdate: Cascade)
   deliveryFee          DeliveryFee?           @relation(fields: [deliveryRange], references: [range])

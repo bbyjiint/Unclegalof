@@ -6,6 +6,7 @@ import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwner, requireSales } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
+import { getCanonicalCompanyOwnerId } from "../lib/company.js";
 import { deleteUploadedFileFromR2 } from "../lib/r2Cleanup.js";
 
 const router = Router();
@@ -78,11 +79,7 @@ const updateSaleStatusSchema = z.object({
   status: z.enum(["paid", "pending", "deposit"]),
 });
 
-function isSalesUser(req) {
-  return req.role === "SALES";
-}
-
-// GET /api/sales - Get sales for a month/year
+// GET /api/sales - Get sales for a month/year (whole company; role gate only)
 router.get(
   "/",
   authenticate,
@@ -96,12 +93,10 @@ router.get(
       
       const saleRecords = await prisma.saleRecord.findMany({
         where: {
-          ownerId: req.tenantOwnerId,
           saleDate: {
             gte: start,
             lt: end,
           },
-          ...(isSalesUser(req) ? { createdByUserId: req.user.id } : {}),
         },
         include: {
           promotion: true,
@@ -160,14 +155,15 @@ router.post(
         }
       }
 
-      const saleRecordData = salePayloadToSaleRecord(payload, deskItem.id);
+      const companyOwnerId = await getCanonicalCompanyOwnerId(prisma);
+      const saleRecordData = salePayloadToSaleRecord(payload, deskItem.id, companyOwnerId);
+      // Audit: who keyed this sale in (never overwritten by later slip/status edits).
       saleRecordData.createdByUserId = req.user.id;
       const saleDate = new Date(payload.date);
       const year = saleDate.getUTCFullYear();
       const month = saleDate.getUTCMonth() + 1;
       const sequence = await prisma.saleRecord.count({
         where: {
-          ownerId: req.tenantOwnerId,
           saleDate: {
             gte: new Date(Date.UTC(year, month - 1, 1)),
             lt: new Date(Date.UTC(year, month, 1)),
@@ -236,10 +232,6 @@ router.patch(
         return res.status(404).json({ error: "Sale not found" });
       }
 
-      if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
-        return res.status(403).json({ error: "You can only modify your own sales records" });
-      }
-
       const previousSlipUrl = sale.paymentSlipImage;
       if (previousSlipUrl && previousSlipUrl !== fileUrl) {
         await deleteUploadedFileFromR2(previousSlipUrl);
@@ -300,10 +292,6 @@ router.delete(
 
       if (!sale) {
         return res.status(404).json({ error: "Sale not found" });
-      }
-
-      if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
-        return res.status(403).json({ error: "You can only modify your own sales records" });
       }
 
       const previousSlipUrl = sale.paymentSlipImage;
@@ -403,10 +391,17 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
       });
 
-      if (!sale || sale.ownerId !== req.tenantOwnerId) {
+      if (!sale) {
         return res.status(404).json({ error: "Sale not found" });
       }
 
@@ -427,6 +422,13 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
       });
 
@@ -451,12 +453,8 @@ router.delete(
         where: { id },
       });
 
-      if (!sale || sale.ownerId !== req.tenantOwnerId) {
+      if (!sale) {
         return res.status(404).json({ error: "Sale not found" });
-      }
-
-      if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
-        return res.status(403).json({ error: "You can only delete your own sales records" });
       }
 
       if (sale.paymentSlipImage) {

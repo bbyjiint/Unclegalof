@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireOwnerOrAdmin, requireTenant } from "../middleware/authorize.middleware.js";
+import { requireOwner } from "../middleware/authorize.middleware.js";
 
 const router = Router();
 
@@ -14,13 +14,12 @@ const queryMonthYearSchema = z.object({
 
 /**
  * GET /api/reports?month=&year=
- * Owner-class only — aggregates for the tenant.
+ * Owner only — aggregates for the whole company.
  */
 router.get(
   "/",
   authenticate,
-  requireTenant,
-  requireOwnerOrAdmin,
+  requireOwner,
   validate(queryMonthYearSchema, "query"),
   async (req, res, next) => {
     try {
@@ -31,7 +30,6 @@ router.get(
 
       const saleRecords = await prisma.saleRecord.findMany({
         where: {
-          ownerId: req.tenantOwnerId,
           saleDate: {
             gte: start,
             lt: end,

@@ -34,6 +34,8 @@ export function saleRecordToSale(saleRecord, sequence = null) {
     paymentSlipImage: saleRecord.paymentSlipImage || null,
     slipViewedAt: saleRecord.slipViewedAt?.toISOString() || null,
     paidAt: saleRecord.paidAt?.toISOString() || null,
+    /** When the sale record was first saved (audit). */
+    recordedAt: saleRecord.createdAt?.toISOString() || null,
     createdByUserId: saleRecord.createdBy?.id || saleRecord.createdByUserId || null,
     createdByUsername: saleRecord.createdBy?.username || null,
     createdByName: saleRecord.createdBy?.fullName || null,
@@ -42,8 +44,9 @@ export function saleRecordToSale(saleRecord, sequence = null) {
 
 /**
  * Convert frontend Sale payload to database SaleRecord format
+ * @param companyOwnerId FK anchor — use getCanonicalCompanyOwnerId() for single-company mode
  */
-export function salePayloadToSaleRecord(payload, deskItemId, tenantOwnerId) {
+export function salePayloadToSaleRecord(payload, deskItemId, companyOwnerId) {
   const unitDiscount = (payload.discount || 0) + (payload.manualDisc || 0);
   const unitNet = Math.max(0, (payload.price || 0) - unitDiscount);
   const grandTotal = unitNet * (payload.qty || 1) + (payload.wFee || 0);
@@ -52,7 +55,7 @@ export function salePayloadToSaleRecord(payload, deskItemId, tenantOwnerId) {
   const deliveryType = VALID_DELIVERY_METHODS.has(payload.delivery) ? payload.delivery : "selfpickup";
 
   return {
-    ownerId: tenantOwnerId,
+    ownerId: companyOwnerId,
     saleDate: new Date(payload.date),
     deskType: deskItemId,
     quantity: payload.qty || 1,

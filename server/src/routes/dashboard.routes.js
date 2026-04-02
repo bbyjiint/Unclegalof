@@ -6,6 +6,7 @@ import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwner } from "../middleware/authorize.middleware.js";
 import { saleRecordToSale, promotionToFrontend } from "../lib/adapters.js";
+import { getAllActiveUserIds } from "../lib/company.js";
 import { findAllPromotionsRows } from "../lib/promotions.db.js";
 
 const router = Router();
@@ -28,18 +29,11 @@ router.get(
       const start = new Date(Date.UTC(year, month - 1, 1));
       const end = new Date(Date.UTC(year, month, 1));
 
-      const tenantMembers = await prisma.user.findMany({
-        where: {
-          OR: [{ id: req.tenantOwnerId }, { ownerId: req.tenantOwnerId }],
-        },
-        select: { id: true },
-      });
-      const tenantUserIds = tenantMembers.map((u) => u.id);
+      const tenantUserIds = await getAllActiveUserIds(prisma);
 
-      // Get sales for the month (tenant-scoped)
+      // Get sales for the month (whole company)
       const saleRecords = await prisma.saleRecord.findMany({
         where: {
-          ownerId: req.tenantOwnerId,
           saleDate: {
             gte: start,
             lt: end,
@@ -49,6 +43,13 @@ router.get(
           promotion: true,
           deskItem: true,
           commissions: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       });
