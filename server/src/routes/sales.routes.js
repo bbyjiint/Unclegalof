@@ -9,6 +9,12 @@ import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
 import { getCanonicalCompanyOwnerId } from "../lib/company.js";
 import { getAverageRecordedCost } from "../lib/inventoryCost.js";
+import {
+  commissionBahtForLine,
+  MONTHLY_COMMISSION_FREE_UNITS,
+  MONTHLY_COMMISSION_PER_UNIT_BAHT,
+  yearlyBonusProgress,
+} from "../lib/salesCommission.js";
 import { deleteUploadedFileFromR2 } from "../lib/r2Cleanup.js";
 
 const router = Router();
@@ -139,6 +145,88 @@ router.get(
   }
 );
 
+// GET /api/sales/commission-insights — SALES only: monthly/yearly unit counts & encouragement copy
+router.get("/commission-insights", authenticate, requireSales, async (req, res, next) => {
+  try {
+    if (req.role !== UserRole.SALES) {
+      res.json({ applies: false, role: req.role });
+      return;
+    }
+
+    const userId = req.user.id;
+    const now = new Date();
+    const y = now.getUTCFullYear();
+    const m = now.getUTCMonth() + 1;
+    const monthStart = new Date(Date.UTC(y, m - 1, 1));
+    const monthEnd = new Date(Date.UTC(y, m, 1));
+    const yearStart = new Date(Date.UTC(y, 0, 1));
+    const yearEnd = new Date(Date.UTC(y + 1, 0, 1));
+
+    const [monthAgg, yearAgg, monthlyCommAgg] = await Promise.all([
+      prisma.saleRecord.aggregate({
+        where: { createdByUserId: userId, saleDate: { gte: monthStart, lt: monthEnd } },
+        _sum: { quantity: true },
+      }),
+      prisma.saleRecord.aggregate({
+        where: { createdByUserId: userId, saleDate: { gte: yearStart, lt: yearEnd } },
+        _sum: { quantity: true },
+      }),
+      prisma.saleRecordCommission.aggregate({
+        where: {
+          userId,
+          saleRecord: { saleDate: { gte: monthStart, lt: monthEnd } },
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const monthlyUnitsSold = monthAgg._sum.quantity ?? 0;
+    const yearlyUnitsSold = yearAgg._sum.quantity ?? 0;
+    const monthlyCommissionBaht = monthlyCommAgg._sum.amount ?? 0;
+
+    const { currentTier, nextTier, tablesUntilNext } = yearlyBonusProgress(yearlyUnitsSold);
+
+    let tablesUntilMonthlyCommission = null;
+    if (monthlyUnitsSold <= MONTHLY_COMMISSION_FREE_UNITS) {
+      tablesUntilMonthlyCommission = MONTHLY_COMMISSION_FREE_UNITS + 1 - monthlyUnitsSold;
+    }
+
+    const encouragementLines = [];
+    if (tablesUntilMonthlyCommission != null && tablesUntilMonthlyCommission > 0) {
+      encouragementLines.push(
+        `อีก ${tablesUntilMonthlyCommission} โต๊ะจะเริ่มได้คอมมิชชั่น ${MONTHLY_COMMISSION_PER_UNIT_BAHT} บาท/ตัว (เดือนนี้)`
+      );
+    } else {
+      encouragementLines.push(
+        `ขายแล้ว ${monthlyUnitsSold} โต๊ะเดือนนี้ · คอมมิชชั่นสะสม ${monthlyCommissionBaht.toLocaleString("th-TH")} บาท`
+      );
+    }
+    if (nextTier) {
+      encouragementLines.push(
+        `อีก ${tablesUntilNext} โต๊ะถึงโบนัสปี ${nextTier.bonusBaht.toLocaleString("th-TH")} บาท (เป้า ${nextTier.units} โต๊ะ/ปี)`
+      );
+    } else {
+      encouragementLines.push(`ยอดขายปีนี้ ${yearlyUnitsSold} โต๊ะ — ถึงระดับโบนัสปีสูงสุดในแผนแล้ว`);
+    }
+
+    res.json({
+      applies: true,
+      calendarMonth: m,
+      calendarYear: y,
+      monthlyUnitsSold,
+      yearlyUnitsSold,
+      monthlyCommissionBaht,
+      tablesUntilMonthlyCommission,
+      yearlyCurrentTier: currentTier,
+      yearlyNextTier: nextTier,
+      tablesUntilYearlyBonus: tablesUntilNext,
+      encouragementLines,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // POST /api/sales - Create a new sale
 router.post(
   "/",
@@ -186,37 +274,72 @@ router.post(
 
       // Audit: who keyed this sale in (never overwritten by later slip/status edits).
       saleRecordData.createdByUserId = req.user.id;
+
       const saleDate = new Date(payload.date);
       const year = saleDate.getUTCFullYear();
       const month = saleDate.getUTCMonth() + 1;
-      const sequence = await prisma.saleRecord.count({
-        where: {
-          saleDate: {
-            gte: new Date(Date.UTC(year, month - 1, 1)),
-            lt: new Date(Date.UTC(year, month, 1)),
+      const monthStart = new Date(Date.UTC(year, month - 1, 1));
+      const monthEnd = new Date(Date.UTC(year, month, 1));
+
+      const includeBlock = {
+        promotion: true,
+        deskItem: true,
+        deliveryFee: true,
+        createdBy: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
           },
         },
-      });
+      };
 
-      saleRecordData.orderNumber = `SO-${year}${String(month).padStart(2, "0")}-${String(sequence + 1).padStart(4, "0")}`;
-      
-      const saleRecord = await prisma.saleRecord.create({
-        data: saleRecordData,
-        include: {
-          promotion: true,
-          deskItem: true,
-          deliveryFee: true,
-          createdBy: {
-            select: {
-              id: true,
-              username: true,
-              fullName: true,
+      const { saleRecord, sequence } = await prisma.$transaction(async (tx) => {
+        let priorUnits = 0;
+        if (req.role === UserRole.SALES) {
+          const priorAgg = await tx.saleRecord.aggregate({
+            where: {
+              createdByUserId: req.user.id,
+              saleDate: { gte: monthStart, lt: monthEnd },
+            },
+            _sum: { quantity: true },
+          });
+          priorUnits = priorAgg._sum.quantity ?? 0;
+        }
+
+        const sequenceNext = await tx.saleRecord.count({
+          where: {
+            saleDate: {
+              gte: monthStart,
+              lt: monthEnd,
             },
           },
-        },
+        });
+
+        saleRecordData.orderNumber = `SO-${year}${String(month).padStart(2, "0")}-${String(sequenceNext + 1).padStart(4, "0")}`;
+
+        const created = await tx.saleRecord.create({
+          data: saleRecordData,
+          include: includeBlock,
+        });
+
+        if (req.role === UserRole.SALES) {
+          const commBaht = commissionBahtForLine(priorUnits, qty);
+          if (commBaht > 0) {
+            await tx.saleRecordCommission.create({
+              data: {
+                saleRecordId: created.id,
+                userId: req.user.id,
+                amount: commBaht,
+                remarks: `คอมมิชชั่นเกิน ${MONTHLY_COMMISSION_FREE_UNITS} โต๊ะ/เดือน (${MONTHLY_COMMISSION_PER_UNIT_BAHT} บาท/ตัว)`,
+              },
+            });
+          }
+        }
+
+        return { saleRecord: created, sequence: sequenceNext };
       });
-      
-      // Transform to frontend format
+
       const includeCost = req.role === UserRole.OWNER;
       const item = saleRecordToSale(saleRecord, sequence, { includeCost });
 

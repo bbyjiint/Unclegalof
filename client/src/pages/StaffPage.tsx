@@ -12,12 +12,20 @@ import {
   X
 } from "lucide-react";
 import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
+import { useAuth } from "../components/AuthProvider";
 import { formatMoney, getZoneByKm } from "../data/constants";
 import { api } from "../lib/api";
 import { zoneForKm } from "../lib/deliveryZones";
 import { formatPromoValueLabel, promoUnitDiscountBaht } from "../lib/promotions";
 import { uploadFileToR2 } from "../lib/upload";
-import type { DeliveryMode, DeliveryZoneRow, PayStatus, Promotion, Sale } from "../types";
+import type {
+  DeliveryMode,
+  DeliveryZoneRow,
+  PayStatus,
+  Promotion,
+  Sale,
+  SalesCommissionInsights
+} from "../types";
 
 type StaffFormState = {
   date: string;
@@ -61,6 +69,7 @@ const initialForm = (today: string): StaffFormState => ({
 });
 
 export default function StaffPage() {
+  const { user } = useAuth();
   const today = new Date().toISOString().slice(0, 10);
   const paymentSlipInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [promotions, setPromotions] = useState<Promotion[]>([]);
@@ -68,6 +77,7 @@ export default function StaffPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZoneRow[]>([]);
+  const [commissionInsights, setCommissionInsights] = useState<SalesCommissionInsights | null>(null);
   const [uploadingSaleId, setUploadingSaleId] = useState<string | null>(null);
   const [slipPreviewSrc, setSlipPreviewSrc] = useState<string | null>(null);
   const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
@@ -91,13 +101,15 @@ export default function StaffPage() {
     setLoading(true);
     try {
       const now = new Date();
-      const [promoData, salesData, productsData, feesData] = await Promise.all([
+      const [promoData, salesData, productsData, feesData, insightsData] = await Promise.all([
         api.promotions(),
         api.sales(now.getMonth() + 1, now.getFullYear()),
         api.getProducts(),
         api.deliveryFees().catch(() => ({ zones: [] as DeliveryZoneRow[] })),
+        api.salesCommissionInsights().catch(() => ({ applies: false } as SalesCommissionInsights)),
       ]);
       setDeliveryZones(feesData.zones || []);
+      setCommissionInsights(insightsData.applies ? insightsData : null);
       const nextProducts = productsData.items || [];
       setPromotions(promoData.items || []);
       setSales(salesData.items || []);
@@ -314,6 +326,38 @@ export default function StaffPage() {
 
   return (
     <main className="wrap">
+      {user?.role === "SALES" && commissionInsights ? (
+        <section
+          className="card"
+          style={{
+            marginBottom: 16,
+            borderLeft: "4px solid #c9a227",
+            background: "linear-gradient(180deg, #fffdf7 0%, #fff 100%)"
+          }}
+        >
+          <h3 className="h-with-icon" style={{ fontSize: 16, marginBottom: 8 }}>
+            <Wallet size={18} strokeWidth={2} aria-hidden />
+            คอมมิชชั่น & โบนัส
+          </h3>
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#555" }}>
+            โต๊ะเดือนนี้: <strong>{commissionInsights.monthlyUnitsSold ?? 0}</strong> ชุด · โต๊ะปีนี้:{" "}
+            <strong>{commissionInsights.yearlyUnitsSold ?? 0}</strong> ชุด
+            {commissionInsights.yearlyCurrentTier ? (
+              <>
+                {" "}
+                · โบนัสปีที่ถึงแล้ว:{" "}
+                <strong>{formatMoney(commissionInsights.yearlyCurrentTier.bonusBaht)}</strong>
+              </>
+            ) : null}
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.55, color: "#1c1c1e" }}>
+            {(commissionInsights.encouragementLines ?? []).map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="stats2">
         <div className="stat">
           <label>ยอดขายของคุณเดือนนี้</label>

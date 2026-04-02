@@ -5,8 +5,8 @@ import {
   ClipboardList,
   LayoutDashboard,
   MapPin,
+  Package,
   Tag,
-  Truck,
   Users
 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   { to: "/owner", end: true as const, label: "ภาพรวม", Icon: LayoutDashboard },
   { to: "/owner/employees", end: false as const, label: "พนักงาน", Icon: Users },
   { to: "/owner/promotions", end: false as const, label: "โปรโมชั่น", Icon: Tag },
-  { to: "/owner/purchasing", end: false as const, label: "สั่งซื้อ", Icon: Truck },
+  { to: "/owner/purchasing", end: false as const, label: "รับของ / สต็อก", Icon: Package },
   { to: "/owner/delivery", end: false as const, label: "ค่าจัดส่ง", Icon: MapPin },
   { to: "/owner/reports", end: false as const, label: "รายงาน", Icon: ClipboardList }
 ];
@@ -45,7 +45,7 @@ function pageTitleFromPath(pathname: string): string {
   const routes: Array<{ prefix: string; title: string }> = [
     { prefix: "/owner/employees", title: "พนักงาน" },
     { prefix: "/owner/promotions", title: "โปรโมชั่น" },
-    { prefix: "/owner/purchasing", title: "สั่งซื้อ" },
+    { prefix: "/owner/purchasing", title: "รับของ & สต็อก" },
     { prefix: "/owner/delivery", title: "ค่าจัดส่ง" },
     { prefix: "/owner/reports", title: "รายงาน" }
   ];

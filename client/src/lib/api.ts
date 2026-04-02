@@ -3,6 +3,7 @@ import type {
   CurrentUserResponse,
   AuthUser,
   StaffMember,
+  InventoryLotRow,
   InventorySummaryResponse,
   PresignedUploadResponse,
   ProductItem,
@@ -16,7 +17,8 @@ import type {
   RepairStatus,
   SalesResponse,
   StoredFilePurpose,
-  ReportsSummaryResponse
+  ReportsSummaryResponse,
+  SalesCommissionInsights
 } from "../types";
 
 const API_BASE_URL =
@@ -247,9 +249,24 @@ export const api = {
   inventorySummary: () => request<InventorySummaryResponse>("/inventory/summary"),
   addInventoryStock: (payload: AddInventoryStockPayload) =>
     request("/inventory/movements/stock-in", { method: "POST", body: JSON.stringify(payload) }),
+  inventoryLots: () => request<{ items: InventoryLotRow[] }>("/inventory/lots"),
+  inventoryBatchLots: (payload: {
+    note?: string;
+    items: Array<{ deskItemId: string; qty: number; costPerUnit: number }>;
+  }) =>
+    request<{ count: number; lotIds: string[] }>("/inventory/lots/batch", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateInventoryLotCost: (id: string, payload: { costPerUnit: number }) =>
+    request<{ item: InventoryLotRow }>(`/inventory/lots/${id}/cost`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   
   // Sales
   sales: (month: number, year: number) => request<SalesResponse>(`/sales?month=${month}&year=${year}`),
+  salesCommissionInsights: () => request<SalesCommissionInsights>("/sales/commission-insights"),
   createSale: (payload: CreateSalePayload) => request("/sales", { method: "POST", body: JSON.stringify(payload) }),
   uploadSalePaymentSlip: (id: string, payload: UploadSalePaymentSlipPayload) =>
     request(`/sales/${id}/payment-slip`, { method: "PATCH", body: JSON.stringify(payload) }),

@@ -129,6 +129,18 @@ export interface InventoryMovement {
   createdAt?: string;
 }
 
+/** GET /inventory/lots — owner sees costPerUnit */
+export interface InventoryLotRow {
+  id: string;
+  deskItemId: string;
+  productName: string;
+  qty: number;
+  remainingQty: number;
+  costPerUnit?: number;
+  note?: string | null;
+  createdAt: string;
+}
+
 export interface OwnerDashboard {
   summary: {
     /** สะสมทั้งหมด — รายรับจากการขาย */
@@ -146,6 +158,23 @@ export interface OwnerDashboard {
 
 export interface SalesResponse {
   items: Sale[];
+}
+
+/** GET /sales/commission-insights — พนักงานขายเท่านั้น */
+export interface SalesCommissionInsights {
+  applies: boolean;
+  role?: UserRole;
+  calendarMonth?: number;
+  calendarYear?: number;
+  monthlyUnitsSold?: number;
+  yearlyUnitsSold?: number;
+  monthlyCommissionBaht?: number;
+  /** จำนวนโต๊ะจนกว่าจะถึงโต๊ะที่ 21 (เริ่มได้คอม 200/ตัว) — null ถ้าเลยแล้ว */
+  tablesUntilMonthlyCommission?: number | null;
+  yearlyCurrentTier?: { units: number; bonusBaht: number } | null;
+  yearlyNextTier?: { units: number; bonusBaht: number } | null;
+  tablesUntilYearlyBonus?: number | null;
+  encouragementLines?: string[];
 }
 
 /** GET /api/reports — owner-class only */

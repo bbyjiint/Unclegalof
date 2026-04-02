@@ -4,7 +4,7 @@ import { InventoryDirection, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireSales } from "../middleware/authorize.middleware.js";
+import { requireOwner, requireSales } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 
 const router = Router();
@@ -26,6 +26,10 @@ const batchLotsSchema = z.object({
       })
     )
     .min(1),
+});
+
+const patchLotCostSchema = z.object({
+  costPerUnit: z.number().int().nonnegative(),
 });
 
 const paramsIdSchema = z.object({
@@ -388,6 +392,56 @@ router.post(
       res.status(201).json({
         count: created.length,
         lotIds: created.map((l) => l.id),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PATCH /api/inventory/lots/:id/cost — OWNER: ใส่/แก้ ต้นทุนต่อชิ้นรอบรับของ (ถ้าเคยเป็น 0 จะเพิ่ม DeskItemCostLog)
+router.patch(
+  "/lots/:id/cost",
+  authenticate,
+  requireOwner,
+  writeRateLimiter,
+  validate(paramsIdSchema, "params"),
+  validate(patchLotCostSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { costPerUnit } = req.body;
+
+      const lot = await prisma.inventoryLot.findUnique({
+        where: { id },
+        include: { deskItem: true },
+      });
+
+      if (!lot) {
+        return res.status(404).json({ error: "Lot not found" });
+      }
+
+      const prevCost = lot.costPerUnit;
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const row = await tx.inventoryLot.update({
+          where: { id },
+          data: { costPerUnit },
+          include: { deskItem: true },
+        });
+        if (prevCost === 0 && costPerUnit > 0) {
+          await tx.deskItemCostLog.create({
+            data: {
+              deskItemId: lot.deskItemId,
+              costPerUnit,
+            },
+          });
+        }
+        return row;
+      });
+
+      res.json({
+        item: lotToFrontend(updated, true),
       });
     } catch (error) {
       next(error);
