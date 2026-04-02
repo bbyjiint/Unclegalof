@@ -8,6 +8,7 @@ import { requireOwner, requireSales } from "../middleware/authorize.middleware.j
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
 import { getCanonicalCompanyOwnerId } from "../lib/company.js";
+import { getAverageRecordedCost } from "../lib/inventoryCost.js";
 import { deleteUploadedFileFromR2 } from "../lib/r2Cleanup.js";
 
 const router = Router();
@@ -128,7 +129,8 @@ router.get(
       });
       
       // Transform to frontend format
-      const items = saleRecords.map((sale, index) => saleRecordToSale(sale, index));
+      const includeCost = req.role === UserRole.OWNER;
+      const items = saleRecords.map((sale, index) => saleRecordToSale(sale, index, { includeCost }));
       
       res.json({ items });
     } catch (error) {
@@ -171,6 +173,17 @@ router.post(
 
       const companyOwnerId = await getCanonicalCompanyOwnerId(prisma);
       const saleRecordData = salePayloadToSaleRecord(payload, deskItem.id, companyOwnerId);
+
+      const avgRec = await getAverageRecordedCost(prisma, deskItem.id);
+      const qty = payload.qty || 1;
+      const avgUnitCostSnapshot = avgRec?.avgUnitCost ?? 0;
+      const cogsTotal = avgUnitCostSnapshot * qty;
+      const productNet = saleRecordData.amount - (saleRecordData.workerFee || 0);
+      const grossProfit = productNet - cogsTotal;
+      saleRecordData.avgUnitCostSnapshot = avgUnitCostSnapshot;
+      saleRecordData.cogsTotal = cogsTotal;
+      saleRecordData.grossProfit = grossProfit;
+
       // Audit: who keyed this sale in (never overwritten by later slip/status edits).
       saleRecordData.createdByUserId = req.user.id;
       const saleDate = new Date(payload.date);
@@ -204,8 +217,9 @@ router.post(
       });
       
       // Transform to frontend format
-      const item = saleRecordToSale(saleRecord, sequence);
-      
+      const includeCost = req.role === UserRole.OWNER;
+      const item = saleRecordToSale(saleRecord, sequence, { includeCost });
+
       res.status(201).json(item);
     } catch (error) {
       next(error);
@@ -275,7 +289,8 @@ router.patch(
         },
       });
 
-      res.json(saleRecordToSale(updatedSale));
+      const includeCost = req.role === UserRole.OWNER;
+      res.json(saleRecordToSale(updatedSale, null, { includeCost }));
     } catch (error) {
       next(error);
     }
@@ -341,7 +356,8 @@ router.delete(
         },
       });
 
-      res.json(saleRecordToSale(updatedSale));
+      const includeCost = req.role === UserRole.OWNER;
+      res.json(saleRecordToSale(updatedSale, null, { includeCost }));
     } catch (error) {
       next(error);
     }
@@ -388,7 +404,7 @@ router.patch(
         },
       });
 
-      res.json(saleRecordToSale(updatedSale));
+      res.json(saleRecordToSale(updatedSale, null, { includeCost: true }));
     } catch (error) {
       next(error);
     }
@@ -454,7 +470,7 @@ router.patch(
         },
       });
 
-      res.json(saleRecordToSale(updatedSale));
+      res.json(saleRecordToSale(updatedSale, null, { includeCost: true }));
     } catch (error) {
       next(error);
     }

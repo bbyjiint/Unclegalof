@@ -53,7 +53,8 @@ router.get(
         orderBy: { createdAt: "desc" },
       });
 
-      const items = saleRecords.map((sale, index) => saleRecordToSale(sale, index));
+      const includeCost = req.role === UserRole.OWNER;
+      const items = saleRecords.map((sale, index) => saleRecordToSale(sale, index, { includeCost }));
       res.json({ items });
     } catch (error) {
       next(error);

@@ -68,6 +68,30 @@ export interface Sale {
   createdByUserId?: string | null;
   createdByUsername?: string | null;
   createdByName?: string | null;
+  /** OWNER-only: mean of recorded purchase ต้นทุน/หน่วย at sale time */
+  avgUnitCost?: number;
+  /** OWNER-only: COGS for this line */
+  cogsTotal?: number;
+  /** OWNER-only: (รายได้สินค้า) - COGS */
+  grossProfit?: number;
+}
+
+/** OWNER-only: คงคลัง + ต้นทุนเฉลี่ยจากค่าที่บันทึกตอนรับของ */
+export interface CostPositionRow {
+  deskItemId: string;
+  name: string;
+  onHandQty: number;
+  avgUnitCost: number | null;
+  /** จำนวนครั้งที่บันทึกต้นทุน (ใช้หาค่าเฉลี่ย) */
+  costSampleCount?: number;
+}
+
+/** Delivery zone band + fee (from GET /catalog/delivery-fees). */
+export interface DeliveryZoneRow {
+  range: number;
+  minKm: number;
+  maxKm: number;
+  cost: number;
 }
 
 export interface RepairItem {
@@ -107,11 +131,15 @@ export interface InventoryMovement {
 
 export interface OwnerDashboard {
   summary: {
+    /** สะสมทั้งหมด — รายรับจากการขาย */
     income: number;
+    /** สะสมทั้งหมด — ต้นทุนสินค้า (COGS) */
     cost: number;
+    cogsFromSales: number;
     profit: number;
     margin: number;
   };
+  costPositions: CostPositionRow[];
   promotions: Promotion[];
   sales: Sale[];
 }

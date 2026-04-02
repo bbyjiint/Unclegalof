@@ -4,6 +4,7 @@ import {
   ChevronRight,
   ClipboardList,
   LayoutDashboard,
+  MapPin,
   Tag,
   Truck,
   Users
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { to: "/owner/employees", end: false as const, label: "พนักงาน", Icon: Users },
   { to: "/owner/promotions", end: false as const, label: "โปรโมชั่น", Icon: Tag },
   { to: "/owner/purchasing", end: false as const, label: "สั่งซื้อ", Icon: Truck },
+  { to: "/owner/delivery", end: false as const, label: "ค่าจัดส่ง", Icon: MapPin },
   { to: "/owner/reports", end: false as const, label: "รายงาน", Icon: ClipboardList }
 ];
 
@@ -44,6 +46,7 @@ function pageTitleFromPath(pathname: string): string {
     { prefix: "/owner/employees", title: "พนักงาน" },
     { prefix: "/owner/promotions", title: "โปรโมชั่น" },
     { prefix: "/owner/purchasing", title: "สั่งซื้อ" },
+    { prefix: "/owner/delivery", title: "ค่าจัดส่ง" },
     { prefix: "/owner/reports", title: "รายงาน" }
   ];
   for (const { prefix, title } of routes) {

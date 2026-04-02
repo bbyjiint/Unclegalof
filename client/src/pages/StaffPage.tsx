@@ -12,11 +12,12 @@ import {
   X
 } from "lucide-react";
 import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
-import { formatMoney, getZoneByKm, DELIVERY_ZONES } from "../data/constants";
+import { formatMoney, getZoneByKm } from "../data/constants";
 import { api } from "../lib/api";
+import { zoneForKm } from "../lib/deliveryZones";
 import { formatPromoValueLabel, promoUnitDiscountBaht } from "../lib/promotions";
 import { uploadFileToR2 } from "../lib/upload";
-import type { DeliveryMode, PayStatus, Promotion, Sale } from "../types";
+import type { DeliveryMode, DeliveryZoneRow, PayStatus, Promotion, Sale } from "../types";
 
 type StaffFormState = {
   date: string;
@@ -66,6 +67,7 @@ export default function StaffPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZoneRow[]>([]);
   const [uploadingSaleId, setUploadingSaleId] = useState<string | null>(null);
   const [slipPreviewSrc, setSlipPreviewSrc] = useState<string | null>(null);
   const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
@@ -89,11 +91,13 @@ export default function StaffPage() {
     setLoading(true);
     try {
       const now = new Date();
-      const [promoData, salesData, productsData] = await Promise.all([
+      const [promoData, salesData, productsData, feesData] = await Promise.all([
         api.promotions(),
         api.sales(now.getMonth() + 1, now.getFullYear()),
         api.getProducts(),
+        api.deliveryFees().catch(() => ({ zones: [] as DeliveryZoneRow[] })),
       ]);
+      setDeliveryZones(feesData.zones || []);
       const nextProducts = productsData.items || [];
       setPromotions(promoData.items || []);
       setSales(salesData.items || []);
@@ -124,7 +128,13 @@ export default function StaffPage() {
 
   const unitDiscount = Number(form.discount || 0) + Number(form.manualDisc || 0);
   const unitNet = Math.max(0, Number(form.price || 0) - unitDiscount);
-  const zone = form.delivery === "delivery" ? getZoneByKm(Number(form.km || 0)) : null;
+  const kmNum = Number(form.km || 0);
+  const zone =
+    form.delivery === "delivery"
+      ? deliveryZones.length > 0
+        ? zoneForKm(deliveryZones, kmNum)
+        : getZoneByKm(kmNum)
+      : null;
   const workerFee = form.delivery === "delivery" ? zone?.fee || 0 : (ICE_RATES[form.type] || 0) * Number(form.qty || 1);
   const grandTotal = unitNet * Number(form.qty || 1) + workerFee;
 

@@ -1,13 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
-import { InventoryDirection } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwner } from "../middleware/authorize.middleware.js";
 import { saleRecordToSale, promotionToFrontend } from "../lib/adapters.js";
-import { getAllActiveUserIds } from "../lib/company.js";
 import { findAllPromotionsRows } from "../lib/promotions.db.js";
+import { getAllCostPositionsForOwner } from "../lib/inventoryCost.js";
 
 const router = Router();
 
@@ -16,7 +15,7 @@ const queryMonthYearSchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100),
 });
 
-// GET /api/dashboard/owner - Owner dashboard data
+// GET /api/dashboard/owner — sales list for selected month; financial summary = all-time (รายรับ − ต้นทุนสินค้า)
 router.get(
   "/owner",
   authenticate,
@@ -29,10 +28,7 @@ router.get(
       const start = new Date(Date.UTC(year, month - 1, 1));
       const end = new Date(Date.UTC(year, month, 1));
 
-      const tenantUserIds = await getAllActiveUserIds(prisma);
-
-      // Get sales for the month (whole company)
-      const saleRecords = await prisma.saleRecord.findMany({
+      const saleRecordsMonth = await prisma.saleRecord.findMany({
         where: {
           saleDate: {
             gte: start,
@@ -53,56 +49,33 @@ router.get(
         },
         orderBy: { createdAt: "desc" },
       });
-      
+
       const promotionRows = await findAllPromotionsRows();
 
-      // Transform sales to frontend format
-      const sales = saleRecords.map((sale, index) => saleRecordToSale(sale, index));
+      const sales = saleRecordsMonth.map((sale, index) => saleRecordToSale(sale, index, { includeCost: true }));
 
       const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
-      
-      // Calculate summary
-      const income = sales.reduce((sum, sale) => sum + sale.grandTotal, 0);
-      
-      // Calculate worker costs from commissions
-      const workerCost = saleRecords.reduce((sum, sale) => {
-        const saleCommissions = sale.commissions?.reduce((cSum, comm) => cSum + comm.amount, 0) || 0;
-        return sum + saleCommissions;
-      }, 0);
-      
-      // Get payroll records for the month (workers under this tenant)
-      const payrollRecords = await prisma.payrollRecord.findMany({
-        where: {
-          year,
-          month,
-          userId: { in: tenantUserIds },
-        },
-      });
-      
-      const baseCosts = payrollRecords.reduce((sum, pr) => sum + pr.baseSalary + (pr.bonus || 0) - (pr.deduction || 0), 0);
 
-      const stockInMovements = await prisma.inventoryMovement.findMany({
-        where: {
-          direction: InventoryDirection.IN,
-          createdByUserId: { in: tenantUserIds },
-          createdAt: {
-            gte: start,
-            lt: end,
-          },
-        },
-        include: { lot: true },
+      const allSalesAgg = await prisma.saleRecord.aggregate({
+        _sum: { amount: true, cogsTotal: true },
       });
-      const inventoryCost = stockInMovements.reduce((sum, m) => {
-        const cpu = m.lot?.costPerUnit ?? 0;
-        return sum + m.qty * cpu;
-      }, 0);
-
-      const cost = inventoryCost + workerCost + baseCosts;
+      const income = allSalesAgg._sum.amount ?? 0;
+      const cogsFromSales = allSalesAgg._sum.cogsTotal ?? 0;
+      const cost = cogsFromSales;
       const profit = income - cost;
       const margin = income > 0 ? (profit / income) * 100 : 0;
-      
+
+      const costPositions = await getAllCostPositionsForOwner(prisma);
+
       res.json({
-        summary: { income, cost, profit, margin },
+        summary: {
+          income,
+          cost,
+          cogsFromSales,
+          profit,
+          margin,
+        },
+        costPositions,
         promotions: promotionsFrontend,
         sales,
       });

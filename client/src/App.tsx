@@ -15,6 +15,7 @@ const OwnerEmployeesTab = lazy(() => import("./pages/owner/tabs/OwnerEmployeesTa
 const OwnerPromotionsTab = lazy(() => import("./pages/owner/tabs/OwnerPromotionsTab"));
 const OwnerPurchasingTab = lazy(() => import("./pages/owner/tabs/OwnerPurchasingTab"));
 const OwnerReportsTab = lazy(() => import("./pages/owner/tabs/OwnerReportsTab"));
+const OwnerDeliveryTab = lazy(() => import("./pages/owner/tabs/OwnerDeliveryTab"));
 
 export default function App() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="promotions" element={<OwnerPromotionsTab />} />
             <Route path="purchasing" element={<OwnerPurchasingTab />} />
             <Route path="reports" element={<OwnerReportsTab />} />
+            <Route path="delivery" element={<OwnerDeliveryTab />} />
           </Route>
         </Route>
 

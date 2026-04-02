@@ -2,13 +2,16 @@
  * Adapter functions to transform between frontend format and database format
  */
 
+import { getDeliveryRangeFromKm } from "./deliveryZones.js";
+
 const VALID_SALE_STATUSES = new Set(["paid", "pending", "deposit"]);
 const VALID_DELIVERY_METHODS = new Set(["selfpickup", "delivery"]);
 
 /**
  * Convert database SaleRecord to frontend Sale format
+ * @param {{ includeCost?: boolean }} [options] — OWNER only: include ต้นทุน / COGS / gross profit
  */
-export function saleRecordToSale(saleRecord, sequence = null) {
+export function saleRecordToSale(saleRecord, sequence = null, options = {}) {
   const deskItemName = saleRecord.deskItem?.name || saleRecord.deskType || "";
 
   const orderNumber =
@@ -18,7 +21,7 @@ export function saleRecordToSale(saleRecord, sequence = null) {
   const payStatus = VALID_SALE_STATUSES.has(saleRecord.status) ? saleRecord.status : "pending";
   const delivery = VALID_DELIVERY_METHODS.has(saleRecord.deliveryType) ? saleRecord.deliveryType : "selfpickup";
 
-  return {
+  const base = {
     id: saleRecord.id,
     orderNumber,
     type: deskItemName,
@@ -40,6 +43,14 @@ export function saleRecordToSale(saleRecord, sequence = null) {
     createdByUsername: saleRecord.createdBy?.username || null,
     createdByName: saleRecord.createdBy?.fullName || null,
   };
+
+  if (options.includeCost) {
+    base.avgUnitCost = saleRecord.avgUnitCostSnapshot ?? 0;
+    base.cogsTotal = saleRecord.cogsTotal ?? 0;
+    base.grossProfit = saleRecord.grossProfit ?? 0;
+  }
+
+  return base;
 }
 
 /**
@@ -74,54 +85,6 @@ export function salePayloadToSaleRecord(payload, deskItemId, companyOwnerId) {
     deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
     remarks: payload.note || null,
   };
-}
-
-/**
- * Get delivery range (zone) from km
- * Maps km to zone number based on delivery fee table:
- * Zone 1: 1-10 km (Free)
- * Zone 2: 11-15 km (100)
- * Zone 3: 16-29 km (200)
- * Zone 4: 30-39 km (300)
- * Zone 5: 40-49 km (400)
- * Zone 6: 50-59 km (500)
- * Zone 7: 60-79 km (600)
- * Zone 8: 80-99 km (700)
- * Zone 9: 100-109 km (1000)
- * Zone 10: 110-119 km (1100)
- * Zone 11: 120-129 km (1200)
- * Zone 12: 130-139 km (1300)
- * Zone 13: 140-149 km (1400)
- * Zone 14: 150-159 km (1500)
- * Zone 15: 160-169 km (1600)
- * Zone 16: 170-179 km (1700)
- * Zone 17: 180-189 km (1800)
- * Zone 18: 190-199 km (1900)
- * Zone 19: 200-299 km (2000)
- * Zone 20: 300+ km (2500)
- */
-function getDeliveryRangeFromKm(km) {
-  if (!km || km <= 0) return null;
-  if (km <= 10) return 1;      // Free
-  if (km <= 15) return 2;      // 100
-  if (km <= 29) return 3;      // 200
-  if (km <= 39) return 4;      // 300
-  if (km <= 49) return 5;      // 400
-  if (km <= 59) return 6;      // 500
-  if (km <= 79) return 7;      // 600
-  if (km <= 99) return 8;      // 700
-  if (km <= 109) return 9;    // 1000
-  if (km <= 119) return 10;   // 1100
-  if (km <= 129) return 11;   // 1200
-  if (km <= 139) return 12;   // 1300
-  if (km <= 149) return 13;   // 1400
-  if (km <= 159) return 14;   // 1500
-  if (km <= 169) return 15;   // 1600
-  if (km <= 179) return 16;   // 1700
-  if (km <= 189) return 17;   // 1800
-  if (km <= 199) return 18;   // 1900
-  if (km <= 299) return 19;   // 2000
-  return 20;                   // 2500
 }
 
 /**

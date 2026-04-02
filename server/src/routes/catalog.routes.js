@@ -3,8 +3,10 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireOwner } from "../middleware/authorize.middleware.js";
+import { requireOwner, requireSales } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
+import { mergeDeliveryZonesWithFees, DELIVERY_ZONE_COUNT } from "../lib/deliveryZones.js";
+import { ensureAllDeliveryFeeRows } from "../lib/ensureCatalog.js";
 
 const router = Router();
 
@@ -17,6 +19,56 @@ const deskItemSchema = z.object({
 const paramsIdSchema = z.object({
   id: z.string().uuid(),
 });
+
+const putDeliveryFeesSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        range: z.number().int().min(1).max(DELIVERY_ZONE_COUNT),
+        cost: z.number().int().nonnegative(),
+      })
+    )
+    .min(1)
+    .max(DELIVERY_ZONE_COUNT),
+});
+
+// GET /api/catalog/delivery-fees — zone bands + current prices (sales staff + owners)
+router.get("/delivery-fees", authenticate, requireSales, async (_req, res, next) => {
+  try {
+    let rows = await prisma.deliveryFee.findMany({ orderBy: { range: "asc" } });
+    if (rows.length < DELIVERY_ZONE_COUNT) {
+      await ensureAllDeliveryFeeRows();
+      rows = await prisma.deliveryFee.findMany({ orderBy: { range: "asc" } });
+    }
+    res.json({ zones: mergeDeliveryZonesWithFees(rows) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /api/catalog/delivery-fees — owner sets price per zone
+router.put(
+  "/delivery-fees",
+  authenticate,
+  requireOwner,
+  writeRateLimiter,
+  validate(putDeliveryFeesSchema),
+  async (req, res, next) => {
+    try {
+      await ensureAllDeliveryFeeRows();
+      for (const { range, cost } of req.body.items) {
+        await prisma.deliveryFee.update({
+          where: { range },
+          data: { cost },
+        });
+      }
+      const rows = await prisma.deliveryFee.findMany({ orderBy: { range: "asc" } });
+      res.json({ zones: mergeDeliveryZonesWithFees(rows) });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 // GET /api/catalog/products - Get all desk items
 router.get(

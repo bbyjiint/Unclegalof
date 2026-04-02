@@ -43,6 +43,7 @@ export const ICE_RATES: Record<string, number> = {
   "เก้าอี้ขาว/ดำ": 20
 };
 
+/** Fallback when API delivery fees unavailable; mirrors server `deliveryZones.js` bands. */
 export const DELIVERY_ZONES: DeliveryZone[] = [
   { label: "โซน 1 (ฟรี)", min: 1, max: 10, fee: 0 },
   { label: "โซน 2", min: 11, max: 15, fee: 100 },
@@ -50,20 +51,31 @@ export const DELIVERY_ZONES: DeliveryZone[] = [
   { label: "โซน 4", min: 30, max: 39, fee: 300 },
   { label: "โซน 5", min: 40, max: 49, fee: 400 },
   { label: "โซน 6", min: 50, max: 59, fee: 500 },
-  { label: "โซน 7", min: 60, max: 79, fee: 600 },
-  { label: "โซน 8", min: 80, max: 99, fee: 700 },
-  { label: "โซน 9", min: 100, max: 109, fee: 1000 },
-  { label: "โซน 10", min: 110, max: 119, fee: 1100 },
-  { label: "โซน 11", min: 120, max: 129, fee: 1200 },
-  { label: "โซน 12", min: 130, max: 139, fee: 1300 },
-  { label: "โซน 13", min: 140, max: 149, fee: 1400 },
-  { label: "โซน 14", min: 150, max: 159, fee: 1500 },
-  { label: "โซน 15", min: 160, max: 169, fee: 1600 },
-  { label: "โซน 16", min: 170, max: 179, fee: 1700 },
-  { label: "โซน 17", min: 180, max: 189, fee: 1800 },
-  { label: "โซน 18", min: 190, max: 199, fee: 1900 },
-  { label: "โซน 19", min: 200, max: 299, fee: 2000 },
-  { label: "โซน 20", min: 300, max: 9999, fee: 2500 }
+  { label: "โซน 7", min: 60, max: 69, fee: 600 },
+  { label: "โซน 8", min: 70, max: 79, fee: 700 },
+  { label: "โซน 9", min: 80, max: 89, fee: 800 },
+  { label: "โซน 10", min: 90, max: 99, fee: 900 },
+  { label: "โซน 11", min: 100, max: 109, fee: 1000 },
+  { label: "โซน 12", min: 110, max: 119, fee: 1100 },
+  { label: "โซน 13", min: 120, max: 129, fee: 1200 },
+  { label: "โซน 14", min: 130, max: 139, fee: 1300 },
+  { label: "โซน 15", min: 140, max: 149, fee: 1400 },
+  { label: "โซน 16", min: 150, max: 159, fee: 1500 },
+  { label: "โซน 17", min: 160, max: 169, fee: 1600 },
+  { label: "โซน 18", min: 170, max: 179, fee: 1700 },
+  { label: "โซน 19", min: 180, max: 189, fee: 1800 },
+  { label: "โซน 20", min: 190, max: 199, fee: 1900 },
+  { label: "โซน 21", min: 200, max: 209, fee: 2000 },
+  { label: "โซน 22", min: 210, max: 219, fee: 2100 },
+  { label: "โซน 23", min: 220, max: 229, fee: 2200 },
+  { label: "โซน 24", min: 230, max: 239, fee: 2300 },
+  { label: "โซน 25", min: 240, max: 249, fee: 2400 },
+  { label: "โซน 26", min: 250, max: 259, fee: 2500 },
+  { label: "โซน 27", min: 260, max: 269, fee: 2600 },
+  { label: "โซน 28", min: 270, max: 279, fee: 2700 },
+  { label: "โซน 29", min: 280, max: 289, fee: 2800 },
+  { label: "โซน 30", min: 290, max: 299, fee: 2900 },
+  { label: "โซน 31", min: 300, max: 99999, fee: 3000 }
 ];
 
 export function formatMoney(value: number): string {

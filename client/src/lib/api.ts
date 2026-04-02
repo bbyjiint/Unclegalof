@@ -6,6 +6,7 @@ import type {
   InventorySummaryResponse,
   PresignedUploadResponse,
   ProductItem,
+  DeliveryZoneRow,
   OwnerDashboard,
   PipelineItem,
   PipelinePriority,
@@ -209,6 +210,12 @@ export const api = {
   
   // Catalog
   getProducts: () => request<{ items: Array<{ id: string; name: string; onsitePrice: number; deliveryPrice: number }> }>("/catalog/products"),
+  deliveryFees: () => request<{ zones: DeliveryZoneRow[] }>("/catalog/delivery-fees"),
+  updateDeliveryFees: (items: Array<{ range: number; cost: number }>) =>
+    request<{ zones: DeliveryZoneRow[] }>("/catalog/delivery-fees", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    }),
   
   // Promotions
   promotions: () => request<PromotionsResponse>("/promotions"),

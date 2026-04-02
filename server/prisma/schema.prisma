@@ -88,6 +88,8 @@ model DeskItem {
   inventoryLots InventoryLot[]
   inventoryMovements InventoryMovement[]
   pipelineItems PipelineItem[]
+  /// One row per stock receipt with a recorded ต้นทุน/หน่วย — used for simple average cost.
+  costLogs      DeskItemCostLog[]
 }
 
 model DeliveryFee {
@@ -125,6 +127,12 @@ model SaleRecord {
   status               Status                 @default(pending)
   appliedPromotion     String?                @db.Uuid
   amount               Int
+  /// Simple average of recorded purchase ต้นทุน/หน่วย for this SKU at sale time.
+  avgUnitCostSnapshot  Int                    @default(0)
+  /// quantity * avgUnitCostSnapshot — COGS for this line.
+  cogsTotal            Int                    @default(0)
+  /// (amount - workerFee) - cogsTotal — product gross profit snapshot.
+  grossProfit          Int                    @default(0)
   deliveryType         DeliveryMethod         @default(selfpickup)
   deliveryRange        Int?
   workerFee            Int                    @default(0)
@@ -149,6 +157,17 @@ model SaleRecord {
   @@index([appliedPromotion])
   @@index([deliveryRange])
   @@index([createdByUserId])
+}
+
+/// Sample of ต้นทุน/หน่วย each time stock is received (batch). Average of these = sale COGS basis.
+model DeskItemCostLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  deskItemId  String   @db.Uuid
+  costPerUnit Int
+  createdAt   DateTime @default(now())
+  deskItem    DeskItem @relation(fields: [deskItemId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([deskItemId])
 }
 
 model RepairRecord {

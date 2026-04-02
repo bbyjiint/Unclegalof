@@ -141,6 +141,8 @@ export default function OwnerReportsTab() {
                 <th>สินค้า</th>
                 <th>ชุด</th>
                 <th>ยอดรวม</th>
+                <th>ต้นทุนเฉลี่ย/ชิ้น</th>
+                <th>กำไรขาย</th>
                 <th>สถานะ</th>
                 <th>ผู้บันทึก</th>
                 <th>สลิป/ยืนยัน</th>
@@ -153,6 +155,12 @@ export default function OwnerReportsTab() {
                   <td>{sale.type}</td>
                   <td>{sale.qty}</td>
                   <td>{formatMoney(sale.grandTotal)}</td>
+                  <td className="csub" style={{ fontSize: 12 }}>
+                    {sale.avgUnitCost != null ? formatMoney(sale.avgUnitCost) : "—"}
+                  </td>
+                  <td className="csub" style={{ fontSize: 12 }}>
+                    {sale.grossProfit != null ? formatMoney(sale.grossProfit) : "—"}
+                  </td>
                   <td>{sale.payStatus}</td>
                   <td>
                     <div>{sale.createdByName || sale.createdByUsername || "—"}</div>

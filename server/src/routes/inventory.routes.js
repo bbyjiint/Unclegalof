@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { InventoryDirection } from "@prisma/client";
+import { InventoryDirection, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
@@ -47,6 +47,22 @@ function movementToFrontend(m) {
     note: m.note,
     createdAt: m.createdAt.toISOString(),
   };
+}
+
+function lotToFrontend(lot, includeCost) {
+  const row = {
+    id: lot.id,
+    deskItemId: lot.deskItemId,
+    productName: lot.deskItem.name,
+    qty: lot.qty,
+    remainingQty: lot.remainingQty,
+    note: lot.note,
+    createdAt: lot.createdAt.toISOString(),
+  };
+  if (includeCost) {
+    row.costPerUnit = lot.costPerUnit;
+  }
+  return row;
 }
 
 // GET /api/inventory/products - Get all products available for inventory management
@@ -235,17 +251,9 @@ router.get(
         include: { deskItem: true },
       });
 
+      const includeCost = req.role === UserRole.OWNER;
       res.json({
-        items: lots.map((lot) => ({
-          id: lot.id,
-          deskItemId: lot.deskItemId,
-          productName: lot.deskItem.name,
-          qty: lot.qty,
-          remainingQty: lot.remainingQty,
-          costPerUnit: lot.costPerUnit,
-          note: lot.note,
-          createdAt: lot.createdAt.toISOString(),
-        })),
+        items: lots.map((lot) => lotToFrontend(lot, includeCost)),
       });
     } catch (error) {
       next(error);
@@ -300,14 +308,18 @@ router.post(
         return { lot, movement };
       });
 
+      const includeCost = req.role === UserRole.OWNER;
+      const lotPayload = {
+        id: result.lot.id,
+        deskItemId: result.lot.deskItemId,
+        qty: result.lot.qty,
+        remainingQty: result.lot.remainingQty,
+      };
+      if (includeCost) {
+        lotPayload.costPerUnit = result.lot.costPerUnit;
+      }
       res.status(201).json({
-        lot: {
-          id: result.lot.id,
-          deskItemId: result.lot.deskItemId,
-          qty: result.lot.qty,
-          remainingQty: result.lot.remainingQty,
-          costPerUnit: result.lot.costPerUnit,
-        },
+        lot: lotPayload,
         movement: movementToFrontend(result.movement),
       });
     } catch (error) {
@@ -350,6 +362,14 @@ router.post(
               note,
             },
           });
+          if (item.costPerUnit > 0) {
+            await tx.deskItemCostLog.create({
+              data: {
+                deskItemId: item.deskItemId,
+                costPerUnit: item.costPerUnit,
+              },
+            });
+          }
           await tx.inventoryMovement.create({
             data: {
               deskItemId: item.deskItemId,
