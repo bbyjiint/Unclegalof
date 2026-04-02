@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { CheckCircle2, Clock, Package, PlusCircle, Receipt } from "lucide-react";
+import { CheckCircle2, Clock, Package, Pencil, PlusCircle, Receipt, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import type { InventoryMovement, InventorySummaryItem, ProductItem } from "../types";
 
@@ -198,8 +198,24 @@ export default function InventoryPage() {
                       <div className="csub">หน้าร้าน {item.onsitePrice} | ส่ง {item.deliveryPrice}</div>
                     </div>
                     <div className="crow-r" style={{ display: "flex", gap: 8 }}>
-                      <button type="button" className="btnwarn" onClick={() => void handleEditProduct(item)}>แก้ไข</button>
-                      <button type="button" className="btndel" onClick={() => void handleDeleteProduct(item)}>ลบ</button>
+                      <button
+                        type="button"
+                        className="crow-icon-btn"
+                        aria-label="แก้ไข"
+                        title="แก้ไข"
+                        onClick={() => void handleEditProduct(item)}
+                      >
+                        <Pencil size={18} strokeWidth={2} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        className="crow-icon-btn"
+                        aria-label="ลบ"
+                        title="ลบ"
+                        onClick={() => void handleDeleteProduct(item)}
+                      >
+                        <Trash2 size={18} strokeWidth={2} aria-hidden />
+                      </button>
                     </div>
                   </div>
                 ))

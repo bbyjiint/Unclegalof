@@ -887,6 +887,60 @@ button.sale-slip-link {
   font-size: 10px;
 }
 
+.crow-icon-btn {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #e5e5ea;
+  border-radius: 12px;
+  background: #f2f2f7;
+  color: #1c1c1e;
+  cursor: pointer;
+}
+
+.crow-icon-btn:hover {
+  background: #e8e8ed;
+  border-color: #d8d8dc;
+}
+
+.crow-icon-btn:active {
+  background: #dcdce0;
+}
+
+.crow-icon-btn:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.crow-icon-btn svg {
+  display: block;
+}
+
+.crow-icon-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.crow-icon-btn:disabled:hover,
+.crow-icon-btn:disabled:active {
+  background: #f2f2f7;
+  border-color: #e5e5ea;
+}
+
+.crow-icon-btn__spin {
+  animation: crow-icon-btn-spin 0.7s linear infinite;
+}
+
+@keyframes crow-icon-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .promo-row-actions {
   display: flex;
   align-items: center;

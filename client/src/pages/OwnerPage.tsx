@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { ClipboardList, PlusCircle, Tag, Trash2, Truck, UserPlus, X } from "lucide-react";
+import { ClipboardList, Loader2, PlusCircle, Tag, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { formatMoney } from "../data/constants";
 import { api } from "../lib/api";
@@ -383,17 +383,22 @@ export default function OwnerPage() {
                     {` | ยอดขาย ${member.totalSales} รายการ`}
                   </div>
                 </div>
-                <div className="crow-r">
+                <div className="crow-r" style={{ display: "flex", gap: 8 }}>
                   <button
                     type="button"
-                    className="btndel"
+                    className="crow-icon-btn"
                     onClick={() => {
                       void removeStaffAccount(member);
                     }}
                     disabled={staffDeletingId === member.id}
+                    aria-label={staffDeletingId === member.id ? "กำลังลบ" : "ลบ"}
+                    title={staffDeletingId === member.id ? "กำลังลบ" : "ลบ"}
                   >
-                    <Trash2 size={16} strokeWidth={2.5} aria-hidden />
-                    {staffDeletingId === member.id ? "กำลังลบ..." : "ลบ"}
+                    {staffDeletingId === member.id ? (
+                      <Loader2 size={18} strokeWidth={2} className="crow-icon-btn__spin" aria-hidden />
+                    ) : (
+                      <Trash2 size={18} strokeWidth={2} aria-hidden />
+                    )}
                   </button>
                 </div>
               </div>
