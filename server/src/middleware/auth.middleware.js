@@ -24,7 +24,7 @@ export async function authenticate(req, res, next) {
       where: { id: decoded.userId },
       select: {
         id: true,
-        email: true,
+        username: true,
         fullName: true,
         phone: true,
         isActive: true,
@@ -69,7 +69,7 @@ export async function optionalAuthenticate(req, res, next) {
     const decoded = verifyToken(token);
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, email: true, fullName: true, phone: true, isActive: true, role: true },
+      select: { id: true, username: true, fullName: true, phone: true, isActive: true, role: true },
     });
 
     if (user && user.isActive) {

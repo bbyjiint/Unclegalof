@@ -6,7 +6,7 @@ import { IconLockOutline, IconUserOutline } from "../components/auth/AuthIcons";
 import { getDefaultRouteForRole } from "../lib/roleRoutes";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -18,14 +18,14 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
 
-    if (!email || !password) {
-      setError("กรุณากรอกอีเมลและรหัสผ่าน");
+    if (!username || !password) {
+      setError("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน");
       return;
     }
 
     try {
       setSubmitting(true);
-      const user = await login({ email, password });
+      const user = await login({ username, password });
       navigate(getDefaultRouteForRole(user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : "เข้าสู่ระบบไม่สำเร็จ");
@@ -47,19 +47,18 @@ export default function LoginPage() {
           <span className="auth-line-field__icon">
             <IconUserOutline size={22} />
           </span>
-          <label className="sr-only" htmlFor="login-email">
-            อีเมล
+          <label className="sr-only" htmlFor="login-username">
+            ชื่อผู้ใช้
           </label>
           <input
-            id="login-email"
+            id="login-username"
             className="auth-line-input"
-            type="email"
-            name="email"
-            autoComplete="email"
-            inputMode="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="EMAIL"
+            type="text"
+            name="username"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="USERNAME"
             disabled={submitting}
             aria-invalid={Boolean(error)}
           />

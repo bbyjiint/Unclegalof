@@ -200,6 +200,21 @@ export default function StaffPage() {
       return;
     }
 
+    if (form.delivery === "delivery") {
+      if (!Number(form.km) || Number(form.km) <= 0) {
+        alert("กรุณากรอกระยะทาง (กม.) สำหรับการจัดส่ง");
+        return;
+      }
+      if (!form.addr.trim()) {
+        alert("กรุณากรอกชื่อลูกค้าสำหรับการจัดส่ง");
+        return;
+      }
+      if (!form.deliveryAddress.trim()) {
+        alert("กรุณากรอกที่อยู่จัดส่ง");
+        return;
+      }
+    }
+
     try {
       await api.createSale({
         date: form.date,
@@ -280,11 +295,11 @@ export default function StaffPage() {
     <main className="wrap">
       <section className="stats2">
         <div className="stat">
-          <label>ยอดขายเดือนนี้</label>
+          <label>ยอดขายของคุณเดือนนี้</label>
           <div className="val">{formatMoney(stats.total)}</div>
         </div>
         <div className="stat gold">
-          <label>จำนวนรายการ</label>
+          <label>จำนวนรายการของคุณ</label>
           <div className="val">{stats.count}</div>
         </div>
       </section>
@@ -387,17 +402,30 @@ export default function StaffPage() {
             <div className="frow">
               <div className="fg">
                 <label>ระยะทาง (กม.)</label>
-                <input type="number" value={form.km} onChange={(e) => setForm({ ...form, km: e.target.value === "" ? "" : Number(e.target.value) })} />
+                <input
+                  type="number"
+                  min="1"
+                  required={form.delivery === "delivery"}
+                  value={form.km}
+                  onChange={(e) => setForm({ ...form, km: e.target.value === "" ? "" : Number(e.target.value) })}
+                />
               </div>
               <div className="fg">
                 <label>ชื่อลูกค้า</label>
-                <input type="text" value={form.addr} onChange={(e) => setForm({ ...form, addr: e.target.value })} placeholder="ชื่อผู้รับ / ติดต่อ" />
+                <input
+                  type="text"
+                  required={form.delivery === "delivery"}
+                  value={form.addr}
+                  onChange={(e) => setForm({ ...form, addr: e.target.value })}
+                  placeholder="ชื่อผู้รับ / ติดต่อ"
+                />
               </div>
             </div>
             <div className="frow s1">
               <div className="fg">
                 <label>ที่อยู่จัดส่ง</label>
                 <textarea
+                  required={form.delivery === "delivery"}
                   value={form.deliveryAddress}
                   onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
                   placeholder="บ้านเลขที่ ซอย ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
@@ -458,7 +486,7 @@ export default function StaffPage() {
             <div className="ico" aria-hidden>
               <Package size={26} strokeWidth={1.75} />
             </div>
-            <p>ยังไม่มีรายการ</p>
+            <p>ยังไม่มีรายการขายของคุณในเดือนนี้</p>
           </div>
         ) : (
           sales.map((sale) => (

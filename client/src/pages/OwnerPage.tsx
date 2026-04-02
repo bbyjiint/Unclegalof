@@ -50,7 +50,7 @@ export default function OwnerPage() {
   const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
   const [staffForm, setStaffForm] = useState({
     fullName: "",
-    email: "",
+    username: "",
     password: "",
     phone: "",
   });
@@ -190,19 +190,19 @@ export default function OwnerPage() {
     event.preventDefault();
     setError(null);
     setStaffMessage(null);
-    if (!staffForm.fullName.trim() || !staffForm.email.trim() || staffForm.password.length < 8) {
-      setError("กรอกชื่อ อีเมล และรหัสผ่านอย่างน้อย 8 ตัวอักษร");
+    if (!staffForm.fullName.trim() || !staffForm.username.trim() || staffForm.password.length < 8) {
+      setError("กรอกชื่อ ชื่อผู้ใช้ และรหัสผ่านอย่างน้อย 8 ตัวอักษร");
       return;
     }
     try {
       setStaffSubmitting(true);
       await api.createStaff({
         fullName: staffForm.fullName.trim(),
-        email: staffForm.email.trim(),
+        username: staffForm.username.trim(),
         password: staffForm.password,
         phone: staffForm.phone.trim() || undefined,
       });
-      setStaffForm({ fullName: "", email: "", password: "", phone: "" });
+      setStaffForm({ fullName: "", username: "", password: "", phone: "" });
       setStaffMessage("สร้างบัญชีพนักงานเรียบร้อยแล้ว");
       setStaffModalOpen(false);
     } catch (err) {
@@ -308,12 +308,12 @@ export default function OwnerPage() {
                   />
                 </div>
                 <div className="fg">
-                  <label>อีเมล (ใช้เข้าสู่ระบบ)</label>
+                  <label>ชื่อผู้ใช้ (ใช้เข้าสู่ระบบ)</label>
                   <input
-                    type="email"
-                    value={staffForm.email}
-                    onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
-                    autoComplete="email"
+                    type="text"
+                    value={staffForm.username}
+                    onChange={(e) => setStaffForm({ ...staffForm, username: e.target.value })}
+                    autoComplete="username"
                     required
                     disabled={staffSubmitting}
                   />

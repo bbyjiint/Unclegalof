@@ -100,14 +100,14 @@ type UpdatePipelinePayload = Partial<CreatePipelinePayload>;
 
 type RegisterPayload = {
   fullName: string;
-  email: string;
+  username: string;
   password: string;
   phone?: string;
   role: "OWNER" | "SALES";
 };
 
 type LoginPayload = {
-  email: string;
+  username: string;
   password: string;
 };
 
@@ -126,14 +126,15 @@ export const auth = {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const token = auth.getToken();
+  const mergedHeaders: HeadersInit = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
   
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-      ...(options.headers || {})
-    },
-    ...options
+    ...options,
+    headers: mergedHeaders,
   });
 
   if (!response.ok) {

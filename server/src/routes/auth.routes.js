@@ -50,7 +50,7 @@ const defaultPromotions = [
 // Registration schema
 const registerSchema = z.object({
   fullName: z.string().min(1).max(100),
-  email: z.string().email(),
+  username: z.string().min(3).max(50),
   password: z.string().min(8, "Password must be at least 8 characters"),
   phone: z.string().optional(),
   role: z.enum([UserRole.OWNER, UserRole.SALES]).optional().default(UserRole.SALES),
@@ -58,7 +58,7 @@ const registerSchema = z.object({
 
 // Login schema
 const loginSchema = z.object({
-  email: z.string().email(),
+  username: z.string().min(1),
   password: z.string().min(1),
 });
 
@@ -119,15 +119,15 @@ router.post(
   validate(registerSchema),
   async (req, res, next) => {
     try {
-      const { fullName, email, password, phone, role } = req.body;
+      const { fullName, username, password, phone, role } = req.body;
 
       // Check if user already exists
       const existingUser = await prisma.user.findUnique({
-        where: { email },
+        where: { username },
       });
 
       if (existingUser) {
-        return res.status(409).json({ error: "User with this email already exists" });
+        return res.status(409).json({ error: "User with this username already exists" });
       }
 
       const { allowOwnerSignup } = await getBootstrapStatus();
@@ -145,7 +145,7 @@ router.post(
       const user = await prisma.user.create({
         data: {
           fullName,
-          email,
+          username,
           passwordHash,
           phone,
           role: assignedRole,
@@ -158,7 +158,7 @@ router.post(
       const token = generateToken({
         userId: user.id,
         role: user.role,
-        email: user.email,
+        username: user.username,
       });
 
       res.status(201).json({
@@ -166,7 +166,7 @@ router.post(
         token,
         user: {
           id: user.id,
-          email: user.email,
+          username: user.username,
           fullName: user.fullName,
           phone: user.phone,
           role: user.role,
@@ -180,7 +180,7 @@ router.post(
 
 /**
  * POST /api/auth/login
- * Login with email and password
+ * Login with username and password
  */
 router.post(
   "/login",
@@ -188,16 +188,16 @@ router.post(
   validate(loginSchema),
   async (req, res, next) => {
     try {
-      const { email, password } = req.body;
+      const { username, password } = req.body;
 
       // Find user
       const user = await prisma.user.findUnique({
-        where: { email },
+        where: { username },
       });
 
       if (!user) {
         // Don't reveal if user exists (security best practice)
-        return res.status(401).json({ error: "Invalid email or password" });
+        return res.status(401).json({ error: "Invalid username or password" });
       }
 
       if (!user.isActive) {
@@ -207,14 +207,14 @@ router.post(
       // Verify password
       const isValid = await verifyPassword(user.passwordHash, password);
       if (!isValid) {
-        return res.status(401).json({ error: "Invalid email or password" });
+        return res.status(401).json({ error: "Invalid username or password" });
       }
 
       // Generate JWT token
       const token = generateToken({
         userId: user.id,
         role: user.role,
-        email: user.email,
+        username: user.username,
       });
 
       res.json({
@@ -222,7 +222,7 @@ router.post(
         token,
         user: {
           id: user.id,
-          email: user.email,
+          username: user.username,
           fullName: user.fullName,
           phone: user.phone,
           role: user.role,
@@ -245,7 +245,7 @@ router.get("/me", authenticate, async (req, res, next) => {
       where: { id: req.user.id },
       select: {
         id: true,
-        email: true,
+        username: true,
         fullName: true,
         phone: true,
         role: true,
@@ -255,7 +255,7 @@ router.get("/me", authenticate, async (req, res, next) => {
     res.json({
       user: {
         id: user.id,
-        email: user.email,
+        username: user.username,
         fullName: user.fullName,
         phone: user.phone,
         role: user.role,

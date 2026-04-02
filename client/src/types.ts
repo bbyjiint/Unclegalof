@@ -6,7 +6,7 @@ export type UserRole = "OWNER" | "SALES" | "REPAIRS";
 
 export interface AuthUser {
   id: string;
-  email: string;
+  username: string;
   fullName: string;
   phone?: string | null;
   role: UserRole;
@@ -49,6 +49,9 @@ export interface Sale {
   deliveryAddress?: string | null;
   paymentSlipImage?: string | null;
   paidAt?: string | null;
+  createdByUserId?: string | null;
+  createdByUsername?: string | null;
+  createdByName?: string | null;
 }
 
 export interface RepairItem {

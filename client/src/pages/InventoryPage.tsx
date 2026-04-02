@@ -175,7 +175,7 @@ export default function InventoryPage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <h3 className="h-with-icon" style={{ margin: 0 }}>
                 <Receipt size={20} strokeWidth={2} aria-hidden />
-                จัดการสินค้า (CRUD)
+                จัดการสินค้า
               </h3>
               <button
                 type="button"

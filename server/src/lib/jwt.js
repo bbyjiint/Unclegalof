@@ -12,7 +12,7 @@ if (!JWT_SECRET) {
  * @param {Object} payload - Token payload
  * @param {string} payload.userId - User ID
  * @param {string} payload.role - User role
- * @param {string} payload.email - User email (for identification)
+ * @param {string} payload.username - Username (for identification)
  * @returns {string} JWT token
  */
 export function generateToken(payload) {
@@ -20,7 +20,7 @@ export function generateToken(payload) {
     {
       userId: payload.userId,
       role: payload.role,
-      email: payload.email,
+      username: payload.username,
     },
     JWT_SECRET,
     {

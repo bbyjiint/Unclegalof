@@ -10,25 +10,55 @@ import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
 const router = Router();
 
 // Frontend sale schema - matches what frontend sends
-const frontendSaleSchema = z.object({
-  date: z.string().min(1),
-  type: z.string().min(1), // Product type name (e.g., "โต๊ะลอฟ 70")
-  qty: z.number().int().positive(),
-  price: z.number().nonnegative(),
-  pay: z.enum(["paid", "pending", "deposit"]),
-  discount: z.number().nonnegative().optional().default(0),
-  manualDisc: z.number().nonnegative().optional().default(0),
-  manualReason: z.string().optional().default(""),
-  delivery: z.enum(["selfpickup", "delivery"]),
-  km: z.number().nullable().optional(),
-  zoneName: z.string().nullable().optional(),
-  addr: z.string().optional().default(""),
-  deliveryAddress: z.string().optional().default(""),
-  note: z.string().optional().default(""),
-  wFee: z.number().nonnegative().optional().default(0),
-  wType: z.enum(["po", "ice"]),
-  promoId: z.string().uuid().nullable().optional(),
-});
+const frontendSaleSchema = z
+  .object({
+    date: z.string().min(1),
+    type: z.string().min(1), // Product type name (e.g., "โต๊ะลอฟ 70")
+    qty: z.number().int().positive(),
+    price: z.number().nonnegative(),
+    pay: z.enum(["paid", "pending", "deposit"]),
+    discount: z.number().nonnegative().optional().default(0),
+    manualDisc: z.number().nonnegative().optional().default(0),
+    manualReason: z.string().optional().default(""),
+    delivery: z.enum(["selfpickup", "delivery"]),
+    km: z.number().nullable().optional(),
+    zoneName: z.string().nullable().optional(),
+    addr: z.string().optional().default(""),
+    deliveryAddress: z.string().optional().default(""),
+    note: z.string().optional().default(""),
+    wFee: z.number().nonnegative().optional().default(0),
+    wType: z.enum(["po", "ice"]),
+    promoId: z.string().uuid().nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.delivery !== "delivery") {
+      return;
+    }
+
+    if (data.km == null || data.km <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["km"],
+        message: "Distance (km) is required for delivery and must be greater than 0",
+      });
+    }
+
+    if (!String(data.addr ?? "").trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["addr"],
+        message: "Customer name is required for delivery",
+      });
+    }
+
+    if (!String(data.deliveryAddress ?? "").trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["deliveryAddress"],
+        message: "Delivery address is required for delivery",
+      });
+    }
+  });
 
 const queryMonthYearSchema = z.object({
   month: z.coerce.number().int().min(1).max(12),
@@ -46,6 +76,10 @@ const uploadPaymentSlipSchema = z.object({
 const updateSaleStatusSchema = z.object({
   status: z.enum(["paid", "pending", "deposit"]),
 });
+
+function isSalesUser(req) {
+  return req.role === "SALES";
+}
 
 // GET /api/sales - Get sales for a month/year
 router.get(
@@ -65,11 +99,19 @@ router.get(
             gte: start,
             lt: end,
           },
+          ...(isSalesUser(req) ? { createdByUserId: req.user.id } : {}),
         },
         include: {
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       });
@@ -117,6 +159,7 @@ router.post(
       }
 
       const saleRecordData = salePayloadToSaleRecord(payload, deskItem.id);
+      saleRecordData.createdByUserId = req.user.id;
       const saleDate = new Date(payload.date);
       const year = saleDate.getUTCFullYear();
       const month = saleDate.getUTCMonth() + 1;
@@ -137,6 +180,13 @@ router.post(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
       });
       
@@ -169,11 +219,22 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
       });
 
       if (!sale) {
         return res.status(404).json({ error: "Sale not found" });
+      }
+
+      if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
+        return res.status(403).json({ error: "You can only modify your own sales records" });
       }
 
       const updatedSale = await prisma.saleRecord.update({
@@ -185,6 +246,13 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
       });
 
@@ -260,6 +328,10 @@ router.delete(
 
       if (!sale) {
         return res.status(404).json({ error: "Sale not found" });
+      }
+
+      if (isSalesUser(req) && sale.createdByUserId !== req.user.id) {
+        return res.status(403).json({ error: "You can only delete your own sales records" });
       }
       
       await prisma.saleRecord.delete({

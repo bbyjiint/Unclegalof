@@ -15,7 +15,7 @@ type Role = "owner" | "employee";
 
 export default function SignupPage() {
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState<Role>("employee");
@@ -46,8 +46,8 @@ export default function SignupPage() {
     e.preventDefault();
     setError(null);
 
-    if (!name || !email || !password) {
-      setError("กรุณากรอกชื่อ อีเมล และรหัสผ่านให้ครบ");
+    if (!name || !username || !password) {
+      setError("กรุณากรอกชื่อ ชื่อผู้ใช้ และรหัสผ่านให้ครบ");
       return;
     }
 
@@ -55,7 +55,7 @@ export default function SignupPage() {
       setSubmitting(true);
       const user = await signup({
         fullName: name,
-        email,
+        username,
         password,
         phone: phone || undefined,
         role: allowOwnerSignup && role === "owner" ? "OWNER" : "SALES",
@@ -107,19 +107,18 @@ export default function SignupPage() {
           <span className="auth-line-field__icon">
             <IconEnvelopeOutline size={22} />
           </span>
-          <label className="sr-only" htmlFor="signup-email">
-            อีเมล
+          <label className="sr-only" htmlFor="signup-username">
+            ชื่อผู้ใช้
           </label>
           <input
-            id="signup-email"
+            id="signup-username"
             className="auth-line-input"
-            type="email"
-            name="email"
-            autoComplete="email"
-            inputMode="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="EMAIL"
+            type="text"
+            name="username"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="USERNAME"
             disabled={formBusy}
             aria-invalid={fieldError}
           />

@@ -55,12 +55,13 @@ model User {
   passwordHash          String
   phone                 String?
   role                  UserRole               @default(SALES)
-  /// For STAFF/INVENTORY/DELIVERY: business owner. NULL for OWNER/ADMIN rows.
+  /// Legacy tenant-scope column. Nullable for all roles in current role model.
   ownerId               String?                @db.Uuid
   baseSalary            Int?
   isActive              Boolean                @default(true)
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
+  createdSales          SaleRecord[]
   repairRecordsReported RepairRecord[]
   saleCommissions       SaleRecordCommission[]
   payrollRecords        PayrollRecord[]
@@ -123,15 +124,18 @@ model SaleRecord {
   remarks              String?
   paymentSlipImage     String?                @db.Text
   paidAt               DateTime?
+  createdByUserId      String?                @db.Uuid
   deskItem             DeskItem               @relation(fields: [deskType], references: [id], onDelete: Restrict, onUpdate: Cascade)
   deliveryFee          DeliveryFee?           @relation(fields: [deliveryRange], references: [range])
   promotion            Promotion?             @relation(fields: [appliedPromotion], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdBy            User?                  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   commissions          SaleRecordCommission[]
 
   @@index([saleDate])
   @@index([deskType])
   @@index([appliedPromotion])
   @@index([deliveryRange])
+  @@index([createdByUserId])
 }
 
 model RepairRecord {
