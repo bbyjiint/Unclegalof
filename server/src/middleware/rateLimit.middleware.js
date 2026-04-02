@@ -4,13 +4,14 @@ function buildLimiter({
   windowMs,
   max,
   message,
+  skipSuccessfulRequests = false,
 }) {
   return rateLimit({
     windowMs,
     max,
     standardHeaders: true,
     legacyHeaders: false,
-    skipSuccessfulRequests: false,
+    skipSuccessfulRequests,
     message: { error: message },
   });
 }
@@ -23,8 +24,9 @@ export const generalRateLimiter = buildLimiter({
 
 export const authRateLimiter = buildLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 50,
   message: "Too many authentication attempts. Please try again later.",
+  skipSuccessfulRequests: true,
 });
 
 export const writeRateLimiter = buildLimiter({
