@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CheckCircle2, MapPin, Phone, Truck, User } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, MapPin, MessageCircle, Phone, Truck, User } from "lucide-react";
 import { api } from "../lib/api";
 import { formatMoney } from "../data/constants";
 import type { DeliveryOrderRow } from "../types";
@@ -40,6 +40,14 @@ export default function DeliveryOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [lineGroupNotice, setLineGroupNotice] = useState(false);
+  const lineReminderOkRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (lineGroupNotice) {
+      lineReminderOkRef.current?.focus();
+    }
+  }, [lineGroupNotice]);
 
   async function load(): Promise<void> {
     setLoading(true);
@@ -67,6 +75,7 @@ export default function DeliveryOrdersPage() {
     try {
       await api.completeDeliveryOrder(id);
       setOrders((prev) => prev.filter((row) => row.id !== id));
+      setLineGroupNotice(true);
     } catch (e) {
       alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
     } finally {
@@ -170,6 +179,47 @@ export default function DeliveryOrdersPage() {
           ))}
         </div>
       )}
+
+      {lineGroupNotice ? (
+        <div
+          role="presentation"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="line-reminder-title"
+            className="card"
+            style={{ maxWidth: 400, width: "100%", margin: 0 }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 20 }}>
+              <MessageCircle size={24} strokeWidth={2} aria-hidden style={{ flexShrink: 0, color: "var(--green)", marginTop: 2 }} />
+              <p id="line-reminder-title" style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "var(--dark)", lineHeight: 1.4 }}>
+                ส่งลงไลน์กลุ่มด้วย
+              </p>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                ref={lineReminderOkRef}
+                type="button"
+                className="btnok"
+                onClick={() => setLineGroupNotice(false)}
+              >
+                ตกลง
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
