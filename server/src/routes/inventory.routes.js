@@ -4,7 +4,7 @@ import { InventoryDirection } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireInventory } from "../middleware/authorize.middleware.js";
+import { requireSales } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 
 const router = Router();
@@ -53,7 +53,7 @@ function movementToFrontend(m) {
 router.get(
   "/products",
   authenticate,
-  requireInventory,
+  requireSales,
   async (req, res, next) => {
     try {
       const items = await prisma.deskItem.findMany({
@@ -71,7 +71,7 @@ router.get(
 router.post(
   "/products",
   authenticate,
-  requireInventory,
+  requireSales,
   writeRateLimiter,
   validate(inventoryProductSchema),
   async (req, res, next) => {
@@ -104,7 +104,7 @@ router.post(
 router.patch(
   "/products/:id",
   authenticate,
-  requireInventory,
+  requireSales,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(inventoryProductSchema.partial()),
@@ -137,7 +137,7 @@ router.patch(
 router.delete(
   "/products/:id",
   authenticate,
-  requireInventory,
+  requireSales,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   async (req, res, next) => {
@@ -186,7 +186,7 @@ router.delete(
 router.get(
   "/summary",
   authenticate,
-  requireInventory,
+  requireSales,
   async (req, res, next) => {
     try {
       const deskItems = await prisma.deskItem.findMany({
@@ -226,7 +226,7 @@ router.get(
 router.get(
   "/lots",
   authenticate,
-  requireInventory,
+  requireSales,
   async (req, res, next) => {
     try {
       const lots = await prisma.inventoryLot.findMany({
@@ -257,7 +257,7 @@ router.get(
 router.post(
   "/movements/stock-in",
   authenticate,
-  requireInventory,
+  requireSales,
   writeRateLimiter,
   validate(frontendStockInSchema),
   async (req, res, next) => {
@@ -320,7 +320,7 @@ router.post(
 router.post(
   "/lots/batch",
   authenticate,
-  requireInventory,
+  requireSales,
   writeRateLimiter,
   validate(batchLotsSchema),
   async (req, res, next) => {
@@ -379,7 +379,7 @@ router.post(
 router.delete(
   "/lots/:id",
   authenticate,
-  requireInventory,
+  requireSales,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   async (req, res, next) => {

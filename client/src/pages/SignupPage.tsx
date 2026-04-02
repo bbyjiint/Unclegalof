@@ -58,7 +58,7 @@ export default function SignupPage() {
         email,
         password,
         phone: phone || undefined,
-        role: allowOwnerSignup && role === "owner" ? "OWNER" : "STAFF",
+        role: allowOwnerSignup && role === "owner" ? "OWNER" : "SALES",
       });
       navigate(getDefaultRouteForRole(user.role));
     } catch (err) {

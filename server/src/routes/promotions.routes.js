@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
+import { requireOwner } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { promotionToFrontend } from "../lib/adapters.js";
 import {
@@ -60,7 +60,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(frontendPromotionSchema),
   async (req, res, next) => {
@@ -89,7 +89,7 @@ router.post(
 router.patch(
   "/:id",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(updatePromotionSchema),
@@ -127,7 +127,7 @@ router.patch(
 router.delete(
   "/:id",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   async (req, res, next) => {

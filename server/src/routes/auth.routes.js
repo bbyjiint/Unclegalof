@@ -53,7 +53,7 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
   phone: z.string().optional(),
-  role: z.enum([UserRole.OWNER, UserRole.STAFF]).optional().default(UserRole.STAFF),
+  role: z.enum([UserRole.OWNER, UserRole.SALES]).optional().default(UserRole.SALES),
 });
 
 // Login schema
@@ -134,13 +134,13 @@ router.post(
 
       if (role === UserRole.OWNER && !allowOwnerSignup) {
         return res.status(403).json({
-          error: "Owner signup is only available for the very first account. Please sign up as staff instead.",
+          error: "Owner signup is only available for the very first account. Please sign up as sales instead.",
         });
       }
 
       // Hash password
       const passwordHash = await hashPassword(password);
-      const assignedRole = role === UserRole.OWNER && allowOwnerSignup ? UserRole.OWNER : UserRole.STAFF;
+      const assignedRole = role === UserRole.OWNER && allowOwnerSignup ? UserRole.OWNER : UserRole.SALES;
 
       const user = await prisma.user.create({
         data: {

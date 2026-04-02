@@ -10,10 +10,8 @@ datasource db {
 
 enum UserRole {
   OWNER
-  ADMIN
-  STAFF
-  INVENTORY
-  DELIVERY
+  SALES
+  REPAIRS
 }
 
 enum Status {
@@ -56,7 +54,9 @@ model User {
   email                 String                 @unique
   passwordHash          String
   phone                 String?
-  role                  UserRole               @default(STAFF)
+  role                  UserRole               @default(SALES)
+  /// For STAFF/INVENTORY/DELIVERY: business owner. NULL for OWNER/ADMIN rows.
+  ownerId               String?                @db.Uuid
   baseSalary            Int?
   isActive              Boolean                @default(true)
   createdAt             DateTime               @default(now())

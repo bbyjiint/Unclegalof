@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireStaff } from "../middleware/authorize.middleware.js";
+import { requireRepairs } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { repairRecordToRepairItem } from "../lib/adapters.js";
 
@@ -89,7 +89,7 @@ const paramsIdSchema = z.object({
 router.get(
   "/",
   authenticate,
-  requireStaff,
+  requireRepairs,
   async (req, res, next) => {
     try {
       const repairRecords = await prisma.repairRecord.findMany({
@@ -118,7 +118,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  requireStaff,
+  requireRepairs,
   writeRateLimiter,
   validate(frontendRepairSchema),
   async (req, res, next) => {
@@ -186,7 +186,7 @@ router.post(
 router.patch(
   "/:id/images",
   authenticate,
-  requireStaff,
+  requireRepairs,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(appendRepairImageSchema),
@@ -226,7 +226,7 @@ router.patch(
 router.patch(
   "/:id/status",
   authenticate,
-  requireStaff,
+  requireRepairs,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(updateRepairStatusSchema),
@@ -268,7 +268,7 @@ router.patch(
 router.delete(
   "/:id",
   authenticate,
-  requireStaff,
+  requireRepairs,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   async (req, res, next) => {

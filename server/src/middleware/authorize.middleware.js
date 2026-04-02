@@ -30,39 +30,14 @@ export function requireAuthAndRole(...allowedRoles) {
   ];
 }
 
-/**
- * Owner/Admin only - highest privilege level
- */
-export const requireOwnerOrAdmin = requireAuthAndRole(UserRole.OWNER, UserRole.ADMIN);
-
-/**
- * Owner only - absolute control
- */
 export const requireOwner = requireAuthAndRole(UserRole.OWNER);
 
-/**
- * Staff and above - can access most features
- */
-export const requireStaff = requireAuthAndRole(
+export const requireSales = requireAuthAndRole(
   UserRole.OWNER,
-  UserRole.ADMIN,
-  UserRole.STAFF
+  UserRole.SALES
 );
 
-/**
- * Inventory role and above
- */
-export const requireInventory = requireAuthAndRole(
+export const requireRepairs = requireAuthAndRole(
   UserRole.OWNER,
-  UserRole.ADMIN,
-  UserRole.INVENTORY
-);
-
-/**
- * Delivery role and above
- */
-export const requireDelivery = requireAuthAndRole(
-  UserRole.OWNER,
-  UserRole.ADMIN,
-  UserRole.DELIVERY
+  UserRole.REPAIRS
 );

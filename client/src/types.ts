@@ -2,7 +2,7 @@ export type DeliveryMode = "selfpickup" | "delivery";
 export type PayStatus = "paid" | "pending" | "deposit";
 export type RepairStatus = "open" | "inprogress" | "done";
 export type RepairKind = "repair" | "claim";
-export type UserRole = "OWNER" | "ADMIN" | "STAFF" | "INVENTORY" | "DELIVERY";
+export type UserRole = "OWNER" | "SALES" | "REPAIRS";
 
 export interface AuthUser {
   id: string;

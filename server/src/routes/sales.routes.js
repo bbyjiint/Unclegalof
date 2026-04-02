@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireOwnerOrAdmin, requireStaff } from "../middleware/authorize.middleware.js";
+import { requireOwner, requireSales } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { saleRecordToSale, salePayloadToSaleRecord } from "../lib/adapters.js";
 
@@ -51,7 +51,7 @@ const updateSaleStatusSchema = z.object({
 router.get(
   "/",
   authenticate,
-  requireStaff,
+  requireSales,
   validate(queryMonthYearSchema, "query"),
   async (req, res, next) => {
     try {
@@ -88,7 +88,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  requireStaff,
+  requireSales,
   writeRateLimiter,
   validate(frontendSaleSchema),
   async (req, res, next) => {
@@ -154,7 +154,7 @@ router.post(
 router.patch(
   "/:id/payment-slip",
   authenticate,
-  requireStaff,
+  requireSales,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(uploadPaymentSlipSchema),
@@ -198,7 +198,7 @@ router.patch(
 router.patch(
   "/:id/status",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(updateSaleStatusSchema),
@@ -247,7 +247,7 @@ router.patch(
 router.delete(
   "/:id",
   authenticate,
-  requireStaff,
+  requireSales,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   async (req, res, next) => {

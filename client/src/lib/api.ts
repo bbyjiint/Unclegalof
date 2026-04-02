@@ -103,7 +103,7 @@ type RegisterPayload = {
   email: string;
   password: string;
   phone?: string;
-  role: "OWNER" | "STAFF";
+  role: "OWNER" | "SALES";
 };
 
 type LoginPayload = {
