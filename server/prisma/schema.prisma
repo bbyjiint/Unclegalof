@@ -67,6 +67,8 @@ model User {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   createdSales          SaleRecord[]
+  /// Sales belonging to this user as tenant owner (see SaleRecord.ownerId).
+  salesAsTenantOwner    SaleRecord[]           @relation("SaleTenant")
   repairRecordsReported RepairRecord[]
   saleCommissions       SaleRecordCommission[]
   payrollRecords        PayrollRecord[]
