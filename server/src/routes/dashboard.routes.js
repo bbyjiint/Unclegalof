@@ -56,14 +56,28 @@ router.get(
 
       const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
 
-      const allSalesAgg = await prisma.saleRecord.aggregate({
-        _sum: { amount: true, cogsTotal: true },
+      // All-time totals — reduce instead of aggregate so sums are plain numbers (no BigInt/JSON issues)
+      const allSalesRows = await prisma.saleRecord.findMany({
+        select: {
+          amount: true,
+          cogsTotal: true,
+          quantity: true,
+          avgUnitCostSnapshot: true,
+        },
       });
-      const income = allSalesAgg._sum.amount ?? 0;
-      const cogsFromSales = allSalesAgg._sum.cogsTotal ?? 0;
+      let income = 0;
+      let cogsFromSales = 0;
+      for (const r of allSalesRows) {
+        income += Number(r.amount ?? 0);
+        let lineCogs = Number(r.cogsTotal ?? 0);
+        if (lineCogs <= 0 && Number(r.avgUnitCostSnapshot ?? 0) > 0) {
+          lineCogs = Number(r.avgUnitCostSnapshot) * Number(r.quantity ?? 0);
+        }
+        cogsFromSales += lineCogs;
+      }
       const cost = cogsFromSales;
       const profit = income - cost;
-      const margin = income > 0 ? (profit / income) * 100 : 0;
+      const margin = income > 0 ? Math.round((profit / income) * 1000) / 10 : 0;
 
       const costPositions = await getAllCostPositionsForOwner(prisma);
 

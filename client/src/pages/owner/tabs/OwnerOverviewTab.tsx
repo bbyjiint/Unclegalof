@@ -2,17 +2,24 @@ import { RefreshCw } from "lucide-react";
 import { formatMoney } from "../../../data/constants";
 import { useOwnerDashboard } from "../ownerDashboardContext";
 
-const defaultSummary = {
-  income: 0,
-  cost: 0,
-  cogsFromSales: 0,
-  profit: 0,
-  margin: 0
-};
+function toNum(v: unknown): number {
+  if (v == null || v === "") {
+    return 0;
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
 export default function OwnerOverviewTab() {
   const { dashboard, month, year, setMonth, setYear, selectableYears, loadPage, statusCount } = useOwnerDashboard();
-  const summary = { ...defaultSummary, ...dashboard?.summary };
+  const raw = dashboard?.summary;
+  const summary = {
+    income: toNum(raw?.income),
+    cost: toNum(raw?.cost),
+    cogsFromSales: toNum(raw?.cogsFromSales),
+    profit: toNum(raw?.profit),
+    margin: toNum(raw?.margin),
+  };
   const costPositions = dashboard?.costPositions ?? [];
 
   return (
@@ -66,7 +73,7 @@ export default function OwnerOverviewTab() {
           <div className="val">{formatMoney(summary.income)}</div>
         </div>
         <div className="owner-dash__stat">
-          <label>ต้นทุนสินค้าสะสม (COGS)</label>
+          <label>ต้นทุนสินค้าสะสม</label>
           <div className="val">{formatMoney(summary.cogsFromSales)}</div>
         </div>
         <div className="owner-dash__stat">
