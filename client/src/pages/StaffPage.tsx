@@ -40,6 +40,7 @@ type StaffFormState = {
   delivery: DeliveryMode;
   km: number | "";
   addr: string;
+  customerPhone: string;
   deliveryAddress: string;
   note: string;
 };
@@ -64,6 +65,7 @@ const initialForm = (today: string): StaffFormState => ({
   delivery: "delivery",
   km: "",
   addr: "",
+  customerPhone: "",
   deliveryAddress: "",
   note: ""
 });
@@ -236,6 +238,10 @@ export default function StaffPage() {
         alert("กรุณากรอกที่อยู่จัดส่ง");
         return;
       }
+      if (!form.customerPhone.trim()) {
+        alert("กรุณากรอกเบอร์โทรสำหรับการจัดส่ง");
+        return;
+      }
     }
 
     try {
@@ -252,6 +258,7 @@ export default function StaffPage() {
         km: form.delivery === "delivery" ? Number(form.km || 0) : null,
         zoneName: zone?.label || null,
         addr: form.addr,
+        customerPhone: form.customerPhone,
         deliveryAddress: form.deliveryAddress,
         note: form.note,
         wFee: workerFee,
@@ -483,6 +490,20 @@ export default function StaffPage() {
                   value={form.addr}
                   onChange={(e) => setForm({ ...form, addr: e.target.value })}
                   placeholder="ชื่อผู้รับ / ติดต่อ"
+                />
+              </div>
+            </div>
+            <div className="frow s1">
+              <div className="fg">
+                <label>เบอร์โทร</label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  required={form.delivery === "delivery"}
+                  value={form.customerPhone}
+                  onChange={(e) => setForm({ ...form, customerPhone: e.target.value })}
+                  placeholder="081-234-5678"
                 />
               </div>
             </div>

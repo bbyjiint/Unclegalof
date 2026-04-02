@@ -59,6 +59,7 @@ export interface Sale {
   date?: string;
   note?: string | null;
   customerName?: string | null;
+  customerPhone?: string | null;
   deliveryAddress?: string | null;
   paymentSlipImage?: string | null;
   slipViewedAt?: string | null;
@@ -92,6 +93,18 @@ export interface DeliveryZoneRow {
   minKm: number;
   maxKm: number;
   cost: number;
+}
+
+/** REPAIRS-only list: orders with home delivery (minimal fields for drivers). */
+export interface DeliveryOrderRow {
+  id: string;
+  orderNumber: string;
+  saleDate: string;
+  totalPrice: number;
+  customerName: string | null;
+  customerPhone: string | null;
+  deliveryAddress: string | null;
+  productName: string;
 }
 
 export interface RepairItem {

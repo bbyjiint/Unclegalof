@@ -18,7 +18,8 @@ import type {
   SalesResponse,
   StoredFilePurpose,
   ReportsSummaryResponse,
-  SalesCommissionInsights
+  SalesCommissionInsights,
+  DeliveryOrderRow
 } from "../types";
 
 const API_BASE_URL =
@@ -97,6 +98,7 @@ type CreateSalePayload = {
   km: number | null;
   zoneName: string | null;
   addr: string;
+  customerPhone: string;
   deliveryAddress: string;
   note: string;
   wFee: number;
@@ -277,6 +279,7 @@ export const api = {
   updateSaleStatus: (id: string, payload: UpdateSaleStatusPayload) =>
     request(`/sales/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteSale: (id: string) => request(`/sales/${id}`, { method: "DELETE" }),
+  deliveryOrders: () => request<{ orders: DeliveryOrderRow[] }>("/deliveries"),
   presignUpload: (payload: PresignUploadPayload) =>
     request<PresignedUploadResponse>("/uploads/presign-upload", { method: "POST", body: JSON.stringify(payload) }),
   saveUploadMetadata: (payload: SaveUploadMetadataPayload) =>

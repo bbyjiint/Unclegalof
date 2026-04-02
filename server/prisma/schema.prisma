@@ -138,6 +138,8 @@ model SaleRecord {
   workerFee            Int                    @default(0)
   workerFeeType        String?
   customerName         String?
+  /// Contact phone for delivery (optional; recommended for จัดส่ง).
+  customerPhone        String?                @db.Text
   deliveryAddress      String?                @db.Text
   remarks              String?
   paymentSlipImage     String?                @db.Text

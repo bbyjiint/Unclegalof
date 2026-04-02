@@ -7,6 +7,7 @@ import pipelineRoutes from "./routes/pipeline.routes.js";
 import promotionsRoutes from "./routes/promotions.routes.js";
 import repairsRoutes from "./routes/repairs.routes.js";
 import salesRoutes from "./routes/sales.routes.js";
+import deliveriesRoutes from "./routes/deliveries.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import uploadsRoutes from "./routes/uploads.routes.js";
 import { generalRateLimiter } from "./middleware/rateLimit.middleware.js";
@@ -86,6 +87,7 @@ export function createApp() {
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/pipeline", pipelineRoutes);
   app.use("/api/sales", salesRoutes);
+  app.use("/api/deliveries", deliveriesRoutes);
   app.use("/api/dashboard", dashboardRoutes);
 
   // Error handler

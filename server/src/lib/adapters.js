@@ -33,6 +33,7 @@ export function saleRecordToSale(saleRecord, sequence = null, options = {}) {
     date: (saleRecord.saleDate || saleRecord.createdAt)?.toISOString().split("T")[0] || new Date().toISOString().split("T")[0],
     note: saleRecord.remarks || null,
     customerName: saleRecord.customerName || null,
+    customerPhone: saleRecord.customerPhone || null,
     deliveryAddress: saleRecord.deliveryAddress || null,
     paymentSlipImage: saleRecord.paymentSlipImage || null,
     slipViewedAt: saleRecord.slipViewedAt?.toISOString() || null,
@@ -82,6 +83,7 @@ export function salePayloadToSaleRecord(payload, deskItemId, companyOwnerId) {
     workerFee: payload.wFee || 0,
     workerFeeType: payload.wType || null,
     customerName: payload.addr || null,
+    customerPhone: String(payload.customerPhone ?? "").trim() || null,
     deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
     remarks: payload.note || null,
   };

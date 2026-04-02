@@ -36,5 +36,9 @@ export function canAccessRoute(role: UserRole, path: string): boolean {
     return role === "REPAIRS";
   }
 
+  if (path === "/deliveries") {
+    return role === "REPAIRS";
+  }
+
   return false;
 }

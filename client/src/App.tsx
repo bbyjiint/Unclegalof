@@ -6,6 +6,7 @@ import PublicOnlyRoute from "./components/PublicOnlyRoute";
 import InventoryPage from "./pages/InventoryPage";
 import OwnerDashboardLayout from "./pages/owner/OwnerDashboardLayout";
 import RepairPage from "./pages/RepairPage";
+import DeliveryOrdersPage from "./pages/DeliveryOrdersPage";
 import StaffPage from "./pages/StaffPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
@@ -37,6 +38,10 @@ export default function App() {
 
         <Route element={<ProtectedRoute allowedRoles={["OWNER", "REPAIRS"]} />}>
           <Route path="/repair" element={<RepairPage />} />
+        </Route>
+
+        <Route element={<ProtectedRoute allowedRoles={["REPAIRS"]} />}>
+          <Route path="/deliveries" element={<DeliveryOrdersPage />} />
         </Route>
 
         <Route element={<ProtectedRoute allowedRoles={["OWNER"]} />}>

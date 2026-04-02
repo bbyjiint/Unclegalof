@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Armchair, ClipboardList, Package, Shield, Wrench } from "lucide-react";
+import { Armchair, ClipboardList, Package, Shield, Truck, Wrench } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import { canAccessRoute } from "../lib/roleRoutes";
@@ -11,6 +11,7 @@ const navItems: { to: string; label: string; Icon: LucideIcon }[] = [
   { to: "/staff", label: "รายการขาย", Icon: ClipboardList },
   { to: "/inventory", label: "คลัง", Icon: Package },
   { to: "/repair", label: "ซ่อม/เคลม", Icon: Wrench },
+  { to: "/deliveries", label: "จัดส่ง", Icon: Truck },
   { to: "/owner", label: "เจ้าของ", Icon: Shield },
 ];
 

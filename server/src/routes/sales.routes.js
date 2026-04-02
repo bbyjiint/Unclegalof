@@ -34,6 +34,7 @@ const frontendSaleSchema = z
     km: z.number().nullable().optional(),
     zoneName: z.string().nullable().optional(),
     addr: z.string().optional().default(""),
+    customerPhone: z.string().optional().default(""),
     deliveryAddress: z.string().optional().default(""),
     note: z.string().optional().default(""),
     wFee: z.number().nonnegative().optional().default(0),
@@ -66,6 +67,14 @@ const frontendSaleSchema = z
         code: z.ZodIssueCode.custom,
         path: ["deliveryAddress"],
         message: "Delivery address is required for delivery",
+      });
+    }
+
+    if (!String(data.customerPhone ?? "").trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["customerPhone"],
+        message: "Phone number is required for delivery",
       });
     }
   });
