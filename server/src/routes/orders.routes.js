@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
@@ -15,7 +16,7 @@ const queryMonthYearSchema = z.object({
 
 /**
  * GET /api/orders?month=&year=
- * Same data as sales list (whole company).
+ * Same rules as GET /api/sales: OWNER sees all, SALES only own.
  */
 router.get(
   "/",
@@ -35,11 +36,19 @@ router.get(
             gte: start,
             lt: end,
           },
+          ...(req.role === UserRole.SALES ? { createdByUserId: req.user.id } : {}),
         },
         include: {
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       });

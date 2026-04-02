@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
@@ -79,7 +80,19 @@ const updateSaleStatusSchema = z.object({
   status: z.enum(["paid", "pending", "deposit"]),
 });
 
-// GET /api/sales - Get sales for a month/year (whole company; role gate only)
+/** OWNER sees all sales; SALES only their own rows (createdByUserId). */
+function assertSalesStaffOwnsRecordOrOwner(req, sale, res) {
+  if (req.role === UserRole.OWNER) {
+    return true;
+  }
+  if (sale.createdByUserId !== req.user.id) {
+    res.status(403).json({ error: "You can only access your own sales records" });
+    return false;
+  }
+  return true;
+}
+
+// GET /api/sales — OWNER: all sales in month; SALES: only records they created
 router.get(
   "/",
   authenticate,
@@ -97,6 +110,7 @@ router.get(
             gte: start,
             lt: end,
           },
+          ...(req.role === UserRole.SALES ? { createdByUserId: req.user.id } : {}),
         },
         include: {
           promotion: true,
@@ -232,6 +246,10 @@ router.patch(
         return res.status(404).json({ error: "Sale not found" });
       }
 
+      if (!assertSalesStaffOwnsRecordOrOwner(req, sale, res)) {
+        return;
+      }
+
       const previousSlipUrl = sale.paymentSlipImage;
       if (previousSlipUrl && previousSlipUrl !== fileUrl) {
         await deleteUploadedFileFromR2(previousSlipUrl);
@@ -292,6 +310,10 @@ router.delete(
 
       if (!sale) {
         return res.status(404).json({ error: "Sale not found" });
+      }
+
+      if (!assertSalesStaffOwnsRecordOrOwner(req, sale, res)) {
+        return;
       }
 
       const previousSlipUrl = sale.paymentSlipImage;
@@ -455,6 +477,10 @@ router.delete(
 
       if (!sale) {
         return res.status(404).json({ error: "Sale not found" });
+      }
+
+      if (!assertSalesStaffOwnsRecordOrOwner(req, sale, res)) {
+        return;
       }
 
       if (sale.paymentSlipImage) {
