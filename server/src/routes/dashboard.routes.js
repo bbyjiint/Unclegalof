@@ -4,7 +4,7 @@ import { InventoryDirection } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireOwnerOrAdmin, requireTenant } from "../middleware/authorize.middleware.js";
+import { requireOwner } from "../middleware/authorize.middleware.js";
 import { saleRecordToSale, promotionToFrontend } from "../lib/adapters.js";
 import { findAllPromotionsRows } from "../lib/promotions.db.js";
 
@@ -19,8 +19,7 @@ const queryMonthYearSchema = z.object({
 router.get(
   "/owner",
   authenticate,
-  requireTenant,
-  requireOwnerOrAdmin,
+  requireOwner,
   validate(queryMonthYearSchema, "query"),
   async (req, res, next) => {
     try {

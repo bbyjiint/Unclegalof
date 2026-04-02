@@ -4,7 +4,7 @@ import { PipelinePriority, PipelineStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
+import { requireOwner } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 
 const router = Router();
@@ -53,7 +53,7 @@ function pipelineToJson(row) {
 router.get(
   "/",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   async (req, res, next) => {
     try {
       const rows = await prisma.pipelineItem.findMany({
@@ -74,7 +74,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(pipelineSchema),
   async (req, res, next) => {
@@ -113,7 +113,7 @@ router.post(
 router.patch(
   "/:id",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(pipelineSchema.partial()),
@@ -180,7 +180,7 @@ router.patch(
 router.delete(
   "/:id",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   async (req, res, next) => {

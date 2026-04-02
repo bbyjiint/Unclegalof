@@ -15,6 +15,8 @@
     "prisma:studio": "node scripts/prisma-cli.mjs studio"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1022.0",
+    "@aws-sdk/s3-request-presigner": "^3.1022.0",
     "@prisma/client": "^6.5.0",
     "argon2": "^0.44.0",
     "cors": "^2.8.5",

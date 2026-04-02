@@ -2,11 +2,12 @@ export type DeliveryMode = "selfpickup" | "delivery";
 export type PayStatus = "paid" | "pending" | "deposit";
 export type RepairStatus = "open" | "inprogress" | "done";
 export type RepairKind = "repair" | "claim";
-export type UserRole = "OWNER" | "ADMIN" | "STAFF" | "INVENTORY" | "DELIVERY";
+export type UserRole = "OWNER" | "SALES" | "REPAIRS";
+export type StoredFilePurpose = "PAYMENT_SLIP" | "REPAIR_IMAGE";
 
 export interface AuthUser {
   id: string;
-  email: string;
+  username: string;
   fullName: string;
   phone?: string | null;
   role: UserRole;
@@ -22,6 +23,16 @@ export interface AuthResponse {
 
 export interface CurrentUserResponse {
   user: AuthUser;
+}
+
+export interface StaffMember {
+  id: string;
+  fullName: string;
+  username: string;
+  phone?: string | null;
+  role: UserRole;
+  createdAt: string;
+  totalSales: number;
 }
 
 export type PromotionAmountType = "fixed" | "percent";
@@ -50,7 +61,11 @@ export interface Sale {
   customerName?: string | null;
   deliveryAddress?: string | null;
   paymentSlipImage?: string | null;
+  slipViewedAt?: string | null;
   paidAt?: string | null;
+  createdByUserId?: string | null;
+  createdByUsername?: string | null;
+  createdByName?: string | null;
 }
 
 export interface RepairItem {
@@ -63,7 +78,7 @@ export interface RepairItem {
   kind: RepairKind;
   status: RepairStatus;
   date: string;
-  /** Base64 data URLs (data:image/...) */
+  /** Public image URLs stored in R2 */
   images?: string[];
 }
 
@@ -121,6 +136,13 @@ export interface PromotionsResponse {
 
 export interface RepairsResponse {
   items: RepairItem[];
+}
+
+export interface PresignedUploadResponse {
+  presignedUrl: string;
+  objectKey: string;
+  publicFileUrl: string;
+  bucketName: string;
 }
 
 export interface InventorySummaryResponse {

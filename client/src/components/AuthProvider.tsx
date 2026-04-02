@@ -11,8 +11,16 @@ import { api, auth } from "../lib/api";
 import type { AuthUser } from "../types";
 
 type LoginInput = {
-  email: string;
+  username: string;
   password: string;
+};
+
+type SignupInput = {
+  fullName: string;
+  username: string;
+  password: string;
+  phone?: string;
+  role: "OWNER" | "SALES";
 };
 
 type AuthContextValue = {

@@ -2,7 +2,9 @@ import type {
   AuthResponse,
   CurrentUserResponse,
   AuthUser,
+  StaffMember,
   InventorySummaryResponse,
+  PresignedUploadResponse,
   ProductItem,
   OwnerDashboard,
   PipelineItem,
@@ -12,6 +14,7 @@ import type {
   RepairsResponse,
   RepairStatus,
   SalesResponse,
+  StoredFilePurpose,
   ReportsSummaryResponse
 } from "../types";
 
@@ -25,14 +28,19 @@ type RequestOptions = RequestInit & {
 
 type RegistrationStatusResponse = {
   allowOwnerSignup: boolean;
-  allowPublicStaffSignup: boolean;
+  allowPublicStaffSignup?: boolean;
+};
+
+type StaffListResponse = {
+  items: StaffMember[];
 };
 
 type CreateStaffPayload = {
   fullName: string;
-  email: string;
+  username: string;
   password: string;
   phone?: string;
+  role: "SALES" | "REPAIRS";
 };
 
 type CreatePromotionPayload = {
@@ -54,7 +62,11 @@ type CreateRepairPayload = {
 };
 
 type UploadRepairImagePayload = {
-  imageData: string;
+  fileUrl: string;
+};
+
+type RemoveRepairImagePayload = {
+  fileUrl: string;
 };
 
 type AddInventoryStockPayload = {
@@ -90,7 +102,21 @@ type CreateSalePayload = {
 };
 
 type UploadSalePaymentSlipPayload = {
-  imageData: string;
+  fileUrl: string;
+};
+
+type PresignUploadPayload = {
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  purpose: StoredFilePurpose;
+};
+
+type SaveUploadMetadataPayload = PresignUploadPayload & {
+  objectKey: string;
+  fileUrl: string;
+  bucketName: string;
+  originalFileName: string;
 };
 
 type UpdateSaleStatusPayload = {
@@ -109,8 +135,16 @@ type CreatePipelinePayload = {
 
 type UpdatePipelinePayload = Partial<CreatePipelinePayload>;
 
+type RegisterPayload = {
+  fullName: string;
+  username: string;
+  password: string;
+  phone?: string;
+  role: "OWNER" | "SALES";
+};
+
 type LoginPayload = {
-  email: string;
+  username: string;
   password: string;
 };
 
@@ -129,14 +163,15 @@ export const auth = {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const token = auth.getToken();
+  const mergedHeaders: HeadersInit = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
   
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-      ...(options.headers || {})
-    },
-    ...options
+    ...options,
+    headers: mergedHeaders,
   });
 
   if (!response.ok) {
@@ -163,13 +198,14 @@ export const api = {
   },
   login: (payload: LoginPayload) =>
     request<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
+  register: (payload: RegisterPayload) =>
+    request<AuthResponse>("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
   registrationStatus: () => request<RegistrationStatusResponse>("/auth/bootstrap-status"),
-  createStaff: (payload: CreateStaffPayload) =>
-    request<{ message: string; user: AuthUser }>("/owner/staff", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
   me: () => request<CurrentUserResponse>("/auth/me"),
+  staff: () => request<StaffListResponse>("/auth/staff"),
+  createStaff: (payload: CreateStaffPayload) =>
+    request<{ user: StaffMember }>("/auth/staff", { method: "POST", body: JSON.stringify(payload) }),
+  deleteStaff: (id: string) => request(`/auth/staff/${id}`, { method: "DELETE" }),
   
   // Catalog
   getProducts: () => request<{ items: Array<{ id: string; name: string; onsitePrice: number; deliveryPrice: number }> }>("/catalog/products"),
@@ -188,6 +224,8 @@ export const api = {
     request("/repairs", { method: "POST", body: JSON.stringify(payload) }),
   uploadRepairImage: (id: string, payload: UploadRepairImagePayload) =>
     request(`/repairs/${id}/images`, { method: "PATCH", body: JSON.stringify(payload) }),
+  removeRepairImage: (id: string, payload: RemoveRepairImagePayload) =>
+    request(`/repairs/${id}/images`, { method: "DELETE", body: JSON.stringify(payload) }),
   updateRepairStatus: (id: string, status: RepairStatus) =>
     request(`/repairs/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   deleteRepair: (id: string) => request(`/repairs/${id}`, { method: "DELETE" }),
@@ -203,21 +241,29 @@ export const api = {
   addInventoryStock: (payload: AddInventoryStockPayload) =>
     request("/inventory/movements/stock-in", { method: "POST", body: JSON.stringify(payload) }),
   
-  // Sales / orders (same month filter; orders is alias for tenant-scoped list)
+  // Sales
   sales: (month: number, year: number) => request<SalesResponse>(`/sales?month=${month}&year=${year}`),
-  orders: (month: number, year: number) => request<SalesResponse>(`/orders?month=${month}&year=${year}`),
   createSale: (payload: CreateSalePayload) => request("/sales", { method: "POST", body: JSON.stringify(payload) }),
   uploadSalePaymentSlip: (id: string, payload: UploadSalePaymentSlipPayload) =>
     request(`/sales/${id}/payment-slip`, { method: "PATCH", body: JSON.stringify(payload) }),
+  removeSalePaymentSlip: (id: string) =>
+    request(`/sales/${id}/payment-slip`, { method: "DELETE" }),
+  markSaleSlipViewed: (id: string) =>
+    request(`/sales/${id}/slip-viewed`, { method: "PATCH" }),
   updateSaleStatus: (id: string, payload: UpdateSaleStatusPayload) =>
     request(`/sales/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteSale: (id: string) => request(`/sales/${id}`, { method: "DELETE" }),
+  presignUpload: (payload: PresignUploadPayload) =>
+    request<PresignedUploadResponse>("/uploads/presign-upload", { method: "POST", body: JSON.stringify(payload) }),
+  saveUploadMetadata: (payload: SaveUploadMetadataPayload) =>
+    request("/uploads/save-metadata", { method: "POST", body: JSON.stringify(payload) }),
   
   // Dashboard
   ownerDashboard: (month: number, year: number) =>
     request<OwnerDashboard>(`/dashboard/owner?month=${month}&year=${year}`),
 
-  // Reports (owner-class)
+  // Sales list alias + reports (tenant-scoped on server)
+  orders: (month: number, year: number) => request<SalesResponse>(`/orders?month=${month}&year=${year}`),
   reports: (month: number, year: number) =>
     request<ReportsSummaryResponse>(`/reports?month=${month}&year=${year}`),
 

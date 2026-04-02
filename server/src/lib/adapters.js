@@ -32,7 +32,11 @@ export function saleRecordToSale(saleRecord, sequence = null) {
     customerName: saleRecord.customerName || null,
     deliveryAddress: saleRecord.deliveryAddress || null,
     paymentSlipImage: saleRecord.paymentSlipImage || null,
+    slipViewedAt: saleRecord.slipViewedAt?.toISOString() || null,
     paidAt: saleRecord.paidAt?.toISOString() || null,
+    createdByUserId: saleRecord.createdBy?.id || saleRecord.createdByUserId || null,
+    createdByUsername: saleRecord.createdBy?.username || null,
+    createdByName: saleRecord.createdBy?.fullName || null,
   };
 }
 

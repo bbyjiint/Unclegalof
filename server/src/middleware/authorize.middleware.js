@@ -30,52 +30,14 @@ export function requireAuthAndRole(...allowedRoles) {
   ];
 }
 
-/**
- * After authenticate — ensures user is linked to a tenant (staff.ownerId or owner-class user).
- */
-export function requireTenant(req, res, next) {
-  if (!req.tenantOwnerId) {
-    return res.status(403).json({
-      error: "บัญชีนี้ยังไม่ผูกกับเจ้าของร้าน กรุณาติดต่อผู้ดูแลระบบ",
-    });
-  }
-
-  next();
-}
-
-/**
- * Owner/Admin only - highest privilege level
- */
-export const requireOwnerOrAdmin = requireAuthAndRole(UserRole.OWNER, UserRole.ADMIN);
-
-/**
- * Owner only - absolute control
- */
 export const requireOwner = requireAuthAndRole(UserRole.OWNER);
 
-/**
- * Staff and above - can access most features
- */
-export const requireStaff = requireAuthAndRole(
+export const requireSales = requireAuthAndRole(
   UserRole.OWNER,
-  UserRole.ADMIN,
-  UserRole.STAFF
+  UserRole.SALES
 );
 
-/**
- * Inventory role and above
- */
-export const requireInventory = requireAuthAndRole(
+export const requireRepairs = requireAuthAndRole(
   UserRole.OWNER,
-  UserRole.ADMIN,
-  UserRole.INVENTORY
-);
-
-/**
- * Delivery role and above
- */
-export const requireDelivery = requireAuthAndRole(
-  UserRole.OWNER,
-  UserRole.ADMIN,
-  UserRole.DELIVERY
+  UserRole.REPAIRS
 );

@@ -15,6 +15,7 @@ import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { formatMoney, getZoneByKm, DELIVERY_ZONES } from "../data/constants";
 import { api } from "../lib/api";
 import { formatPromoValueLabel, promoUnitDiscountBaht } from "../lib/promotions";
+import { uploadFileToR2 } from "../lib/upload";
 import type { DeliveryMode, PayStatus, Promotion, Sale } from "../types";
 
 type StaffFormState = {
@@ -200,6 +201,21 @@ export default function StaffPage() {
       return;
     }
 
+    if (form.delivery === "delivery") {
+      if (!Number(form.km) || Number(form.km) <= 0) {
+        alert("กรุณากรอกระยะทาง (กม.) สำหรับการจัดส่ง");
+        return;
+      }
+      if (!form.addr.trim()) {
+        alert("กรุณากรอกชื่อลูกค้าสำหรับการจัดส่ง");
+        return;
+      }
+      if (!form.deliveryAddress.trim()) {
+        alert("กรุณากรอกที่อยู่จัดส่ง");
+        return;
+      }
+    }
+
     try {
       await api.createSale({
         date: form.date,
@@ -238,6 +254,23 @@ export default function StaffPage() {
     }
   }
 
+  async function handleRemovePaymentSlip(saleId: string): Promise<void> {
+    const confirmed = window.confirm("ลบสลิปที่แนบไว้รายการนี้?");
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setUploadingSaleId(saleId);
+      await api.removeSalePaymentSlip(saleId);
+      await loadPage();
+    } catch (error) {
+      console.error("Failed to remove payment slip:", error);
+      alert(error instanceof Error ? error.message : "Failed to remove payment slip");
+    } finally {
+      setUploadingSaleId(null);
+    }
+  }
+
   function openPaymentSlipPicker(saleId: string) {
     paymentSlipInputRefs.current[saleId]?.click();
   }
@@ -257,15 +290,8 @@ export default function StaffPage() {
 
     try {
       setUploadingSaleId(saleId);
-
-      const imageData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Failed to read image file"));
-        reader.readAsDataURL(file);
-      });
-
-      await api.uploadSalePaymentSlip(saleId, { imageData });
+      const fileUrl = await uploadFileToR2(file, "PAYMENT_SLIP");
+      await api.uploadSalePaymentSlip(saleId, { fileUrl });
       await loadPage();
     } catch (error) {
       console.error("Failed to upload payment slip:", error);
@@ -280,11 +306,11 @@ export default function StaffPage() {
     <main className="wrap">
       <section className="stats2">
         <div className="stat">
-          <label>ยอดขายเดือนนี้</label>
+          <label>ยอดขายของคุณเดือนนี้</label>
           <div className="val">{formatMoney(stats.total)}</div>
         </div>
         <div className="stat gold">
-          <label>จำนวนรายการ</label>
+          <label>จำนวนรายการของคุณ</label>
           <div className="val">{stats.count}</div>
         </div>
       </section>
@@ -387,17 +413,30 @@ export default function StaffPage() {
             <div className="frow">
               <div className="fg">
                 <label>ระยะทาง (กม.)</label>
-                <input type="number" value={form.km} onChange={(e) => setForm({ ...form, km: e.target.value === "" ? "" : Number(e.target.value) })} />
+                <input
+                  type="number"
+                  min="1"
+                  required={form.delivery === "delivery"}
+                  value={form.km}
+                  onChange={(e) => setForm({ ...form, km: e.target.value === "" ? "" : Number(e.target.value) })}
+                />
               </div>
               <div className="fg">
                 <label>ชื่อลูกค้า</label>
-                <input type="text" value={form.addr} onChange={(e) => setForm({ ...form, addr: e.target.value })} placeholder="ชื่อผู้รับ / ติดต่อ" />
+                <input
+                  type="text"
+                  required={form.delivery === "delivery"}
+                  value={form.addr}
+                  onChange={(e) => setForm({ ...form, addr: e.target.value })}
+                  placeholder="ชื่อผู้รับ / ติดต่อ"
+                />
               </div>
             </div>
             <div className="frow s1">
               <div className="fg">
                 <label>ที่อยู่จัดส่ง</label>
                 <textarea
+                  required={form.delivery === "delivery"}
                   value={form.deliveryAddress}
                   onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
                   placeholder="บ้านเลขที่ ซอย ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"
@@ -458,7 +497,7 @@ export default function StaffPage() {
             <div className="ico" aria-hidden>
               <Package size={26} strokeWidth={1.75} />
             </div>
-            <p>ยังไม่มีรายการ</p>
+            <p>ยังไม่มีรายการขายของคุณในเดือนนี้</p>
           </div>
         ) : (
           sales.map((sale) => (
@@ -521,13 +560,25 @@ export default function StaffPage() {
                     )}
                   </button>
                   {sale.paymentSlipImage && (
-                    <button
-                      type="button"
-                      className="sale-slip-link sale-slip-link--staff"
-                      onClick={() => setSlipPreviewSrc(sale.paymentSlipImage!)}
-                    >
-                      ดูสลิป
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="sale-slip-link sale-slip-link--staff"
+                        onClick={() => setSlipPreviewSrc(sale.paymentSlipImage!)}
+                      >
+                        ดูสลิป
+                      </button>
+                      <button
+                        type="button"
+                        className="sale-slip-link sale-slip-link--staff"
+                        onClick={() => {
+                          void handleRemovePaymentSlip(sale.id);
+                        }}
+                        disabled={uploadingSaleId === sale.id}
+                      >
+                        ลบสลิป
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

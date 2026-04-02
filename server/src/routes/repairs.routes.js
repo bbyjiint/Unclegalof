@@ -3,9 +3,10 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireStaff } from "../middleware/authorize.middleware.js";
+import { requireRepairs } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { repairRecordToRepairItem } from "../lib/adapters.js";
+import { deleteUploadedFileFromR2, deleteUploadedFilesFromR2 } from "../lib/r2Cleanup.js";
 
 function coerceRepairImages(value) {
   if (Array.isArray(value) && value.every((x) => typeof x === "string")) {
@@ -74,7 +75,11 @@ const frontendRepairSchema = z.object({
 });
 
 const appendRepairImageSchema = z.object({
-  imageData: z.string().min(1),
+  fileUrl: z.string().url(),
+});
+
+const removeRepairImageSchema = z.object({
+  fileUrl: z.string().url(),
 });
 
 const updateRepairStatusSchema = z.object({
@@ -89,7 +94,7 @@ const paramsIdSchema = z.object({
 router.get(
   "/",
   authenticate,
-  requireStaff,
+  requireRepairs,
   async (req, res, next) => {
     try {
       const repairRecords = await prisma.repairRecord.findMany({
@@ -118,7 +123,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  requireStaff,
+  requireRepairs,
   writeRateLimiter,
   validate(frontendRepairSchema),
   async (req, res, next) => {
@@ -182,18 +187,18 @@ router.post(
   }
 );
 
-// PATCH /api/repairs/:id/images - Append one photo (base64 data URL)
+// PATCH /api/repairs/:id/images - Append one uploaded image URL
 router.patch(
   "/:id/images",
   authenticate,
-  requireStaff,
+  requireRepairs,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(appendRepairImageSchema),
   async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { imageData } = req.body;
+      const { fileUrl } = req.body;
 
       const repair = await prisma.repairRecord.findUnique({
         where: { id },
@@ -212,9 +217,50 @@ router.patch(
         return res.status(400).json({ error: `สูงสุด ${MAX_REPAIR_IMAGES} รูปต่อรายการ` });
       }
 
-      const nextImages = [...current, imageData];
+      const nextImages = [...current, fileUrl];
       await setRepairRecordImagesInDb(id, nextImages);
 
+      res.json(repairRecordToRepairItem(mergeRepairRowWithImages(repair, nextImages)));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// DELETE /api/repairs/:id/images - Remove one uploaded image URL
+router.delete(
+  "/:id/images",
+  authenticate,
+  requireRepairs,
+  writeRateLimiter,
+  validate(paramsIdSchema, "params"),
+  validate(removeRepairImageSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { fileUrl } = req.body;
+
+      const repair = await prisma.repairRecord.findUnique({
+        where: { id },
+        include: {
+          deskItem: true,
+          reporter: true,
+        },
+      });
+
+      if (!repair) {
+        return res.status(404).json({ error: "Repair record not found" });
+      }
+
+      const current = await getRepairRecordImagesFromDb(id);
+      const nextImages = current.filter((img) => img !== fileUrl);
+
+      if (nextImages.length === current.length) {
+        return res.status(404).json({ error: "Image not found in this repair record" });
+      }
+
+      await deleteUploadedFileFromR2(fileUrl);
+      await setRepairRecordImagesInDb(id, nextImages);
       res.json(repairRecordToRepairItem(mergeRepairRowWithImages(repair, nextImages)));
     } catch (error) {
       next(error);
@@ -226,7 +272,7 @@ router.patch(
 router.patch(
   "/:id/status",
   authenticate,
-  requireStaff,
+  requireRepairs,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(updateRepairStatusSchema),
@@ -268,7 +314,7 @@ router.patch(
 router.delete(
   "/:id",
   authenticate,
-  requireStaff,
+  requireRepairs,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   async (req, res, next) => {
@@ -282,11 +328,14 @@ router.delete(
       if (!repair) {
         return res.status(404).json({ error: "Repair record not found" });
       }
-      
+
+      const images = await getRepairRecordImagesFromDb(id);
+      await deleteUploadedFilesFromR2(images);
+
       await prisma.repairRecord.delete({
         where: { id: repair.id },
       });
-      
+
       res.json({ success: true });
     } catch (error) {
       next(error);

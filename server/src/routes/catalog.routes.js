@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
-import { requireOwnerOrAdmin } from "../middleware/authorize.middleware.js";
+import { requireOwner } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 
 const router = Router();
@@ -39,7 +39,7 @@ router.get(
 router.post(
   "/products",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(deskItemSchema),
   async (req, res, next) => {
@@ -74,7 +74,7 @@ router.post(
 router.patch(
   "/products/:id",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   validate(deskItemSchema.partial()),
@@ -107,7 +107,7 @@ router.patch(
 router.delete(
   "/products/:id",
   authenticate,
-  requireOwnerOrAdmin,
+  requireOwner,
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
   async (req, res, next) => {

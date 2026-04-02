@@ -25,7 +25,7 @@ export async function authenticate(req, res, next) {
       where: { id: decoded.userId },
       select: {
         id: true,
-        email: true,
+        username: true,
         fullName: true,
         phone: true,
         isActive: true,
@@ -76,7 +76,7 @@ export async function optionalAuthenticate(req, res, next) {
       where: { id: decoded.userId },
       select: {
         id: true,
-        email: true,
+        username: true,
         fullName: true,
         phone: true,
         isActive: true,
