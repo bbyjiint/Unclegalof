@@ -520,7 +520,7 @@ export default function StaffPage() {
                   required={form.delivery === "delivery"}
                   value={form.deliveryAddress}
                   onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
-                  placeholder="ลิงค์กูเกิ้ลแมพ — วางลิงก์จาก Google Maps"
+                  placeholder="ลิงก์กูเกิ้ลแมพ — วางลิงก์จาก Google Maps"
                   rows={3}
                 />
               </div>
