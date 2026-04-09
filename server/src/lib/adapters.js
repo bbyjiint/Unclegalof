@@ -7,6 +7,14 @@ import { getDeliveryRangeFromKm } from "./deliveryZones.js";
 const VALID_SALE_STATUSES = new Set(["paid", "pending", "deposit"]);
 const VALID_DELIVERY_METHODS = new Set(["selfpickup", "delivery"]);
 
+function legacyIceFeeToDeduct(saleRecord) {
+  const isLegacySelfPickupIceFee =
+    saleRecord?.deliveryType === "selfpickup" &&
+    saleRecord?.workerFeeType === "ice" &&
+    Number(saleRecord?.workerFee || 0) > 0;
+  return isLegacySelfPickupIceFee ? Number(saleRecord.workerFee || 0) : 0;
+}
+
 /** Thai mobile: exactly 10 digits, leading 0 (e.g. 0812345678). Strips spaces/dashes. */
 export function normalizeCustomerPhoneThai10(raw) {
   const d = String(raw ?? "").replace(/\D/g, "");
@@ -27,13 +35,15 @@ export function saleRecordToSale(saleRecord, sequence = null, options = {}) {
   const payStatus = VALID_SALE_STATUSES.has(saleRecord.status) ? saleRecord.status : "pending";
   const delivery = VALID_DELIVERY_METHODS.has(saleRecord.deliveryType) ? saleRecord.deliveryType : "selfpickup";
 
+  const grandTotal = Number(saleRecord.amount || 0) - legacyIceFeeToDeduct(saleRecord);
+
   const base = {
     id: saleRecord.id,
     orderNumber,
     type: deskItemName,
     qty: saleRecord.quantity ?? 1,
     price: saleRecord.unitPrice ?? saleRecord.amount,
-    grandTotal: saleRecord.amount,
+    grandTotal: Math.max(0, grandTotal),
     payStatus,
     delivery,
     date: (saleRecord.saleDate || saleRecord.createdAt)?.toISOString().split("T")[0] || new Date().toISOString().split("T")[0],
@@ -49,6 +59,9 @@ export function saleRecordToSale(saleRecord, sequence = null, options = {}) {
     createdByUserId: saleRecord.createdBy?.id || saleRecord.createdByUserId || null,
     createdByUsername: saleRecord.createdBy?.username || null,
     createdByName: saleRecord.createdBy?.fullName || null,
+    paymentBatchId: saleRecord.paymentBatch?.id || saleRecord.paymentBatchId || null,
+    paymentBatchNumber: saleRecord.paymentBatch?.batchNumber || null,
+    paymentBatchTotalAmount: saleRecord.paymentBatch?.totalAmount ?? null,
   };
 
   if (options.includeCost) {

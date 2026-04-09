@@ -39,6 +39,7 @@ router.get(
           promotion: true,
           deskItem: true,
           commissions: true,
+          paymentBatch: true,
           createdBy: {
             select: {
               id: true,

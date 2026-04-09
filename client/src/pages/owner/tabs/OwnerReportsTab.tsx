@@ -26,6 +26,22 @@ export default function OwnerReportsTab() {
     updatingSaleId
   } = useOwnerDashboard();
 
+  const batchMap = new Map<string, { total: number; paid: boolean }>();
+  for (const sale of filteredAndSortedSales) {
+    if (!sale.paymentBatchId) continue;
+    if (!batchMap.has(sale.paymentBatchId)) {
+      batchMap.set(sale.paymentBatchId, {
+        total: Number(sale.paymentBatchTotalAmount || 0),
+        paid: sale.payStatus === "paid",
+      });
+    }
+  }
+  const batchCount = batchMap.size;
+  const batchTotal = Array.from(batchMap.values()).reduce((sum, row) => sum + row.total, 0);
+  const unpaidBatchTotal = Array.from(batchMap.values())
+    .filter((row) => !row.paid)
+    .reduce((sum, row) => sum + row.total, 0);
+
   return (
     <div className="owner-dash__panel">
       <h2 className="owner-dash__h2">รายการขาย</h2>
@@ -125,6 +141,9 @@ export default function OwnerReportsTab() {
           <span>ชำระแล้ว {statusCount.paid}</span>
           <span>ค้างชำระ {statusCount.pending}</span>
           <span>มัดจำ {statusCount.deposit}</span>
+          <span>สลิปรวมทั้งหมด {batchCount}</span>
+          <span>ยอดรวมสลิปรวม {formatMoney(batchTotal)}</span>
+          <span>ยอดสลิปรวมรอตรวจ {formatMoney(unpaidBatchTotal)}</span>
         </div>
       </div>
 
@@ -144,6 +163,7 @@ export default function OwnerReportsTab() {
                 <th>ต้นทุนเฉลี่ย/ชิ้น</th>
                 <th>กำไรขาย</th>
                 <th>สถานะ</th>
+                <th>Batch</th>
                 <th>ผู้บันทึก</th>
                 <th>สลิป/ยืนยัน</th>
               </tr>
@@ -162,6 +182,18 @@ export default function OwnerReportsTab() {
                     {sale.grossProfit != null ? formatMoney(sale.grossProfit) : "—"}
                   </td>
                   <td>{sale.payStatus}</td>
+                  <td>
+                    {sale.paymentBatchNumber ? (
+                      <div>
+                        <div style={{ fontWeight: 600, color: "#1d4ed8" }}>{sale.paymentBatchNumber}</div>
+                        <div className="csub" style={{ fontSize: 11 }}>
+                          รวมบิล {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
+                        </div>
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td>
                     <div>{sale.createdByName || sale.createdByUsername || "—"}</div>
                     {sale.recordedAt ? (

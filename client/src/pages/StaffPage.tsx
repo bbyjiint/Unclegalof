@@ -82,23 +82,17 @@ export default function StaffPage() {
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZoneRow[]>([]);
   const [commissionInsights, setCommissionInsights] = useState<SalesCommissionInsights | null>(null);
   const [uploadingSaleId, setUploadingSaleId] = useState<string | null>(null);
+  const [batchUploading, setBatchUploading] = useState<boolean>(false);
+  const [selectedBatchSaleIds, setSelectedBatchSaleIds] = useState<string[]>([]);
   const [slipPreviewSrc, setSlipPreviewSrc] = useState<string | null>(null);
   const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
+  const batchSlipInputRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<StaffFormState>(initialForm(today));
 
   const selectedProduct = useMemo(
     () => products.find((product) => product.name === form.type) || null,
     [products, form.type]
   );
-
-  const ICE_RATES: Record<string, number> = {
-    "ลอฟขาเอียง": 100,
-    "ลอฟขาตรง": 100,
-    "แกรนิต": 100,
-    "ทรงยู": 100,
-    "1.5 เมตร": 400,
-    "1.8 เมตร": 400,
-  };
 
   async function loadPage(): Promise<void> {
     setLoading(true);
@@ -150,7 +144,7 @@ export default function StaffPage() {
         ? zoneForKm(deliveryZones, kmNum)
         : getZoneByKm(kmNum)
       : null;
-  const workerFee = form.delivery === "delivery" ? zone?.fee || 0 : (ICE_RATES[form.type] || 0) * Number(form.qty || 1);
+  const workerFee = form.delivery === "delivery" ? zone?.fee || 0 : 0;
   const grandTotal = unitNet * Number(form.qty || 1) + workerFee;
 
   useEffect(() => {
@@ -179,6 +173,17 @@ export default function StaffPage() {
     const total = sales.reduce((sum, sale) => sum + Number(sale.grandTotal || 0), 0);
     return { total, count: sales.length };
   }, [sales]);
+
+  const batchEligibleSales = useMemo(
+    () => sales.filter((sale) => sale.payStatus !== "paid" && !sale.paymentBatchId),
+    [sales]
+  );
+
+  useEffect(() => {
+    setSelectedBatchSaleIds((current) =>
+      current.filter((id) => batchEligibleSales.some((sale) => sale.id === id))
+    );
+  }, [batchEligibleSales]);
 
   function getPayStatusLabel(status: PayStatus): string {
     if (status === "paid") {
@@ -331,6 +336,61 @@ export default function StaffPage() {
       alert(error instanceof Error ? error.message : "Failed to upload payment slip");
     } finally {
       setUploadingSaleId(null);
+      event.target.value = "";
+    }
+  }
+
+  function toggleBatchSaleSelection(saleId: string, checked: boolean): void {
+    setSelectedBatchSaleIds((current) => {
+      if (checked) {
+        if (current.includes(saleId)) return current;
+        return [...current, saleId];
+      }
+      return current.filter((id) => id !== saleId);
+    });
+  }
+
+  function openBatchSlipPicker(): void {
+    if (selectedBatchSaleIds.length < 2) {
+      alert("เลือกอย่างน้อย 2 ออเดอร์เพื่อแนบสลิปรวม");
+      return;
+    }
+    batchSlipInputRef.current?.click();
+  }
+
+  async function handleBatchSlipUpload(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("กรุณาอัปโหลดไฟล์รูปภาพ");
+      event.target.value = "";
+      return;
+    }
+    if (selectedBatchSaleIds.length < 2) {
+      alert("เลือกอย่างน้อย 2 ออเดอร์ก่อนแนบสลิปรวม");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      setBatchUploading(true);
+      const fileUrl = await uploadFileToR2(file, "PAYMENT_SLIP");
+      const response = await api.createBatchPayment({
+        saleIds: selectedBatchSaleIds,
+        fileUrl,
+      });
+      alert(
+        `สร้างสลิปรวมสำเร็จ\nBatch: ${response.batch.batchNumber}\nรวม ${formatMoney(
+          response.batch.totalAmount
+        )}\nจำนวน ${response.batch.saleCount} ออเดอร์`
+      );
+      setSelectedBatchSaleIds([]);
+      await loadPage();
+    } catch (error) {
+      console.error("Failed to create batch payment:", error);
+      alert(error instanceof Error ? error.message : "Failed to create batch payment");
+    } finally {
+      setBatchUploading(false);
       event.target.value = "";
     }
   }
@@ -550,10 +610,12 @@ export default function StaffPage() {
             <div className="ctxt">ราคาสินค้าสุทธิ</div>
             <div className="crow-r">{formatMoney(unitNet * Number(form.qty || 1))}</div>
           </div>
-          <div className="crow">
-            <div className="ctxt">{form.delivery === "delivery" ? "ค่าจัดส่ง" : "ค่าแรงยก"}</div>
-            <div className="crow-r">{formatMoney(workerFee)}</div>
-          </div>
+          {form.delivery === "delivery" && (
+            <div className="crow">
+              <div className="ctxt">ค่าจัดส่ง</div>
+              <div className="crow-r">{formatMoney(workerFee)}</div>
+            </div>
+          )}
           <div className="crow">
             <div className="ctxt">รวมทั้งหมด</div>
             <div className="crow-r">{formatMoney(grandTotal)}</div>
@@ -567,6 +629,45 @@ export default function StaffPage() {
       </form>
 
       <section>
+        <div
+          className="card"
+          style={{
+            marginBottom: 12,
+            borderLeft: "4px solid #2563eb",
+            background: "linear-gradient(180deg, #eff6ff 0%, #fff 100%)",
+          }}
+        >
+          <h3 className="h-with-icon" style={{ fontSize: 15 }}>
+            <ImagePlus size={18} strokeWidth={2} aria-hidden />
+            แนบสลิปรวมหลายออเดอร์
+          </h3>
+          <p style={{ margin: "4px 0 10px", fontSize: 13, color: "#334155" }}>
+            เลือกออเดอร์ค้างชำระ/มัดจำ อย่างน้อย 2 รายการ แล้วแนบสลิปโอนครั้งเดียว
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              ref={batchSlipInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(event) => {
+                void handleBatchSlipUpload(event);
+              }}
+            />
+            <button
+              type="button"
+              className="sale-action-btn sale-action-btn--prominent"
+              disabled={batchUploading || selectedBatchSaleIds.length < 2}
+              onClick={openBatchSlipPicker}
+            >
+              {batchUploading ? "กำลังอัปโหลดสลิปรวม..." : "แนบสลิปรวมให้รายการที่เลือก"}
+            </button>
+            <span style={{ fontSize: 12, color: "#475569" }}>
+              เลือกแล้ว {selectedBatchSaleIds.length} รายการ (พร้อมรวม {batchEligibleSales.length} รายการ)
+            </span>
+          </div>
+        </div>
+
         <div className="slist-title with-icon">
           <ClipboardList size={16} strokeWidth={2} aria-hidden />
           รายการขายเดือนนี้
@@ -585,6 +686,32 @@ export default function StaffPage() {
             <div key={sale.id} className={`sitem ${sale.delivery}`}>
               <div className="sitem-l">
                 <div className="soid">{sale.orderNumber}</div>
+                {sale.payStatus !== "paid" && !sale.paymentBatchId ? (
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginTop: 6,
+                      fontSize: 12,
+                      color: "#334155",
+                      cursor: "pointer",
+                      padding: "5px 10px",
+                      borderRadius: 9999,
+                      border: "1px solid #cbd5e1",
+                      background: selectedBatchSaleIds.includes(sale.id) ? "#eff6ff" : "#f8fafc",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      style={{ width: 14, height: 14, accentColor: "#2563eb" }}
+                      checked={selectedBatchSaleIds.includes(sale.id)}
+                      onChange={(event) => toggleBatchSaleSelection(sale.id, event.target.checked)}
+                    />
+                    เลือกเข้ากลุ่มสลิปรวม
+                  </label>
+                ) : null}
                 <div className="sdetail">
                   <span>{sale.type}</span>
                   <span>x{sale.qty}</span>
@@ -604,6 +731,18 @@ export default function StaffPage() {
                   <span className={`bdg ${sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "dep" : "pend"}`}>
                     {getPayStatusLabel(sale.payStatus)}
                   </span>
+                  {sale.paymentBatchNumber ? (
+                    <span
+                      className="bdg"
+                      style={{
+                        background: "#dbeafe",
+                        color: "#1d4ed8",
+                        border: "1px solid #bfdbfe",
+                      }}
+                    >
+                      สลิปรวม
+                    </span>
+                  ) : null}
                 </div>
                 <div className="smeta" style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
                   บันทึกโดย {sale.createdByName || sale.createdByUsername || "—"}
@@ -611,6 +750,26 @@ export default function StaffPage() {
                     ? ` · ${new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
                     : null}
                 </div>
+                {sale.paymentBatchNumber ? (
+                  <div style={{ marginTop: 6 }}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        padding: "3px 9px",
+                        borderRadius: 9999,
+                        background: "#dbeafe",
+                        color: "#1d4ed8",
+                        fontSize: 12,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {sale.paymentBatchNumber}
+                      {sale.paymentBatchTotalAmount != null
+                        ? ` · รวมบิล ${formatMoney(sale.paymentBatchTotalAmount)}`
+                        : ""}
+                    </span>
+                  </div>
+                ) : null}
               </div>
               <div className="sitem-right">
                 <div className="sprice">{formatMoney(sale.grandTotal)}</div>

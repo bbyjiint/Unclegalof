@@ -92,6 +92,13 @@ const uploadPaymentSlipSchema = z.object({
   fileUrl: z.string().url(),
 });
 
+const createBatchPaymentSchema = z.object({
+  saleIds: z.array(z.string().uuid()).min(2),
+  fileUrl: z.string().url(),
+  transferAmount: z.number().int().positive().optional(),
+  note: z.string().optional().default(""),
+});
+
 const updateSaleStatusSchema = z.object({
   status: z.enum(["paid", "pending", "deposit"]),
 });
@@ -106,6 +113,15 @@ function assertSalesStaffOwnsRecordOrOwner(req, sale, res) {
     return false;
   }
   return true;
+}
+
+function normalizedSaleAmountForBatch(sale) {
+  const isLegacySelfPickupIceFee =
+    sale?.deliveryType === "selfpickup" &&
+    sale?.workerFeeType === "ice" &&
+    Number(sale?.workerFee || 0) > 0;
+  const deduction = isLegacySelfPickupIceFee ? Number(sale.workerFee || 0) : 0;
+  return Math.max(0, Number(sale.amount || 0) - deduction);
 }
 
 // GET /api/sales — OWNER: all sales in month; SALES: only records they created
@@ -132,6 +148,7 @@ router.get(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          paymentBatch: true,
           createdBy: {
             select: {
               id: true,
@@ -294,6 +311,7 @@ router.post(
         promotion: true,
         deskItem: true,
         deliveryFee: true,
+        paymentBatch: true,
         createdBy: {
           select: {
             id: true,
@@ -332,6 +350,53 @@ router.post(
           include: includeBlock,
         });
 
+        // Write inventory OUT movements for this sale and reduce lot balances (FIFO).
+        let remainingToConsume = qty;
+        const sourceLots = await tx.inventoryLot.findMany({
+          where: {
+            deskItemId: deskItem.id,
+            remainingQty: { gt: 0 },
+          },
+          orderBy: { createdAt: "asc" },
+        });
+
+        for (const lot of sourceLots) {
+          if (remainingToConsume <= 0) break;
+          const takeQty = Math.min(lot.remainingQty, remainingToConsume);
+          if (takeQty <= 0) continue;
+
+          await tx.inventoryLot.update({
+            where: { id: lot.id },
+            data: { remainingQty: lot.remainingQty - takeQty },
+          });
+
+          await tx.inventoryMovement.create({
+            data: {
+              deskItemId: deskItem.id,
+              inventoryLotId: lot.id,
+              direction: "OUT",
+              qty: takeQty,
+              note: `Sale Order ${saleRecordData.orderNumber}`,
+              createdByUserId: req.user.id,
+            },
+          });
+
+          remainingToConsume -= takeQty;
+        }
+
+        if (remainingToConsume > 0) {
+          await tx.inventoryMovement.create({
+            data: {
+              deskItemId: deskItem.id,
+              inventoryLotId: null,
+              direction: "OUT",
+              qty: remainingToConsume,
+              note: `Sale Order ${saleRecordData.orderNumber} (unallocated; insufficient stock)`,
+              createdByUserId: req.user.id,
+            },
+          });
+        }
+
         if (req.role === UserRole.SALES) {
           const commBaht = commissionBahtForLine(priorUnits, qty);
           if (commBaht > 0) {
@@ -359,6 +424,112 @@ router.post(
   }
 );
 
+// POST /api/sales/batch-payment - Attach one slip to multiple orders
+router.post(
+  "/batch-payment",
+  authenticate,
+  requireSales,
+  writeRateLimiter,
+  validate(createBatchPaymentSchema),
+  async (req, res, next) => {
+    try {
+      const { saleIds, fileUrl, transferAmount, note } = req.body;
+      const uniqueSaleIds = [...new Set(saleIds)];
+
+      const sales = await prisma.saleRecord.findMany({
+        where: { id: { in: uniqueSaleIds } },
+        include: {
+          paymentBatch: true,
+          createdBy: { select: { id: true } },
+        },
+      });
+
+      if (sales.length !== uniqueSaleIds.length) {
+        return res.status(404).json({ error: "Some sales were not found" });
+      }
+
+      if (req.role === UserRole.SALES) {
+        const forbidden = sales.some((s) => s.createdByUserId !== req.user.id);
+        if (forbidden) {
+          return res.status(403).json({ error: "You can only batch your own sales records" });
+        }
+      }
+
+      const alreadyPaid = sales.find((s) => s.status === "paid");
+      if (alreadyPaid) {
+        return res.status(409).json({ error: `Order ${alreadyPaid.orderNumber} is already paid` });
+      }
+
+      const alreadyBatched = sales.find((s) => s.paymentBatchId);
+      if (alreadyBatched) {
+        return res.status(409).json({ error: `Order ${alreadyBatched.orderNumber} already belongs to a batch` });
+      }
+
+      const ownerId = sales[0]?.ownerId;
+      const crossOwner = sales.some((s) => s.ownerId !== ownerId);
+      if (crossOwner) {
+        return res.status(400).json({ error: "Batch payment must contain sales from the same owner scope" });
+      }
+
+      const totalAmount = sales.reduce((sum, sale) => sum + normalizedSaleAmountForBatch(sale), 0);
+      if (transferAmount != null && Number(transferAmount) !== totalAmount) {
+        return res.status(400).json({
+          error: `Transfer amount mismatch: expected ${totalAmount}, got ${transferAmount}`,
+        });
+      }
+
+      const now = new Date();
+      const year = now.getUTCFullYear();
+      const month = now.getUTCMonth() + 1;
+      const monthStart = new Date(Date.UTC(year, month - 1, 1));
+      const monthEnd = new Date(Date.UTC(year, month, 1));
+      const sequence = await prisma.paymentBatch.count({
+        where: {
+          createdAt: { gte: monthStart, lt: monthEnd },
+        },
+      });
+      const batchNumber = `PB-${year}${String(month).padStart(2, "0")}-${String(sequence + 1).padStart(4, "0")}`;
+
+      const batch = await prisma.$transaction(async (tx) => {
+        const createdBatch = await tx.paymentBatch.create({
+          data: {
+            batchNumber,
+            totalAmount,
+            transferAmount: transferAmount ?? null,
+            paymentSlipImage: fileUrl,
+            note: String(note || "").trim() || null,
+            createdByUserId: req.user.id,
+          },
+        });
+
+        await tx.saleRecord.updateMany({
+          where: { id: { in: uniqueSaleIds } },
+          data: {
+            paymentBatchId: createdBatch.id,
+            paymentSlipImage: fileUrl,
+            slipViewedAt: null,
+          },
+        });
+
+        return createdBatch;
+      });
+
+      res.status(201).json({
+        batch: {
+          id: batch.id,
+          batchNumber: batch.batchNumber,
+          totalAmount: batch.totalAmount,
+          transferAmount: batch.transferAmount,
+          paymentSlipImage: batch.paymentSlipImage,
+          saleCount: uniqueSaleIds.length,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // DELETE /api/sales/:id - Delete a sale
 router.patch(
   "/:id/payment-slip",
@@ -378,6 +549,7 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          paymentBatch: true,
           createdBy: {
             select: {
               id: true,
@@ -411,6 +583,7 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          paymentBatch: true,
           createdBy: {
             select: {
               id: true,
@@ -445,6 +618,7 @@ router.delete(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          paymentBatch: true,
           createdBy: {
             select: {
               id: true,
@@ -478,6 +652,7 @@ router.delete(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          paymentBatch: true,
           createdBy: {
             select: {
               id: true,
@@ -526,6 +701,7 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          paymentBatch: true,
           createdBy: {
             select: {
               id: true,
@@ -561,6 +737,7 @@ router.patch(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          paymentBatch: true,
           createdBy: {
             select: {
               id: true,

@@ -15,6 +15,13 @@ type ProductFormState = {
   deliveryPrice: number;
 };
 
+type MovementEditFormState = {
+  type: string;
+  qty: number;
+  note: string;
+  reason: string;
+};
+
 export default function InventoryPage() {
   const [summary, setSummary] = useState<InventorySummaryItem[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -22,6 +29,13 @@ export default function InventoryPage() {
   const [form, setForm] = useState<InventoryFormState>({ type: "", qty: 1, note: "" });
   const [productForm, setProductForm] = useState<ProductFormState>({ name: "", onsitePrice: 0, deliveryPrice: 0 });
   const [isProductModalOpen, setIsProductModalOpen] = useState<boolean>(false);
+  const [editingMovementId, setEditingMovementId] = useState<string | null>(null);
+  const [movementEditForm, setMovementEditForm] = useState<MovementEditFormState>({
+    type: "",
+    qty: 1,
+    note: "",
+    reason: "miscount",
+  });
   const [loading, setLoading] = useState<boolean>(true);
 
   async function loadPage(): Promise<void> {
@@ -142,6 +156,97 @@ export default function InventoryPage() {
     }
   }
 
+  function startEditMovement(movement: InventoryMovement): void {
+    if (movement.direction !== "IN") return;
+    setEditingMovementId(movement.id);
+    setMovementEditForm({
+      type: movement.type,
+      qty: movement.qty,
+      note: movement.note || "",
+      reason: "miscount",
+    });
+  }
+
+  function cancelEditMovement(): void {
+    setEditingMovementId(null);
+    setMovementEditForm({ type: "", qty: 1, note: "", reason: "miscount" });
+  }
+
+  async function submitEditMovement(movementId: string): Promise<void> {
+    if (!movementEditForm.type.trim()) {
+      alert("กรุณาเลือกประเภทสินค้า");
+      return;
+    }
+    if (Number(movementEditForm.qty) <= 0) {
+      alert("จำนวนต้องมากกว่า 0");
+      return;
+    }
+    try {
+      await api.updateInventoryMovement(movementId, {
+        type: movementEditForm.type.trim(),
+        qty: Number(movementEditForm.qty),
+        note: movementEditForm.note,
+        reason: movementEditForm.reason,
+      });
+      cancelEditMovement();
+      await loadPage();
+    } catch (error) {
+      console.error("Failed to update movement:", error);
+      alert(error instanceof Error ? error.message : "Failed to update movement");
+    }
+  }
+
+  function getMovementPresentation(movement: InventoryMovement): {
+    badgeLabel: string;
+    badgeStyle: React.CSSProperties;
+    secondaryText: string | null;
+  } {
+    const rawNote = String(movement.note || "").trim();
+    const adjustmentMatch = rawNote.match(/^(inventory adjustment|adjustment)\s*:?\s*(.*)$/i);
+
+    if (adjustmentMatch) {
+      const reason = (adjustmentMatch[2] || "").trim();
+      const isNegative = movement.direction === "OUT";
+      return {
+        badgeLabel: "Inventory Adjustment",
+        badgeStyle: isNegative
+          ? {
+              background: "#fee2e2",
+              color: "#b91c1c",
+              border: "1px solid #fecaca",
+            }
+          : {
+              background: "#dcfce7",
+              color: "#166534",
+              border: "1px solid #bbf7d0",
+            },
+        secondaryText: reason ? `Reason: ${reason}` : "Reason: manual correction",
+      };
+    }
+
+    if (/^sale(\s+order)?\s+/i.test(rawNote)) {
+      return {
+        badgeLabel: "Sale Order",
+        badgeStyle: {
+          background: "#dbeafe",
+          color: "#1d4ed8",
+          border: "1px solid #bfdbfe",
+        },
+        secondaryText: rawNote,
+      };
+    }
+
+    return {
+      badgeLabel: movement.direction === "IN" ? "Stock In" : "Stock Out",
+      badgeStyle: {
+        background: "#f1f5f9",
+        color: "#475569",
+        border: "1px solid #e2e8f0",
+      },
+      secondaryText: rawNote || null,
+    };
+  }
+
   return (
     <main className="owrap">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
@@ -217,17 +322,119 @@ export default function InventoryPage() {
               <div className="empty"><p>ยังไม่มีรายการ</p></div>
             ) : (
               movements.map((item) => (
-                <div key={item.id} className="crow">
-                  <div className="crow-l">
-                    <div className="ctxt">{item.type}</div>
-                    {item.note && <div className="csub">{item.note}</div>}
+                <div key={item.id} style={{ borderBottom: "1px solid #e2e8f0", padding: "14px 2px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", lineHeight: 1.3 }}>{item.type}</div>
+                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span
+                          style={{
+                            ...getMovementPresentation(item).badgeStyle,
+                            borderRadius: 9999,
+                            padding: "2px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            lineHeight: 1.2,
+                          }}
+                        >
+                          {getMovementPresentation(item).badgeLabel}
+                        </span>
+                        {getMovementPresentation(item).secondaryText && (
+                          <span style={{ fontSize: 12, color: "#64748b" }}>{getMovementPresentation(item).secondaryText}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, minWidth: 120 }}>
+                      <span
+                        style={{
+                          color: item.direction === "IN" ? "#166534" : "#b91c1c",
+                          fontWeight: 700,
+                          fontSize: 18,
+                          minWidth: 56,
+                          textAlign: "right",
+                        }}
+                      >
+                        {item.direction === "IN" ? "+" : "-"}
+                        {item.qty}
+                      </span>
+                      {item.direction === "IN" && (
+                        <button
+                          type="button"
+                          className="crow-icon-btn"
+                          aria-label="แก้ไขรายการรับเข้า"
+                          title="แก้ไขรายการรับเข้า"
+                          onClick={() => startEditMovement(item)}
+                        >
+                          <Pencil size={16} strokeWidth={2} aria-hidden />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="crow-r">
-                    <span style={{ color: item.direction === "IN" ? "var(--green)" : "var(--red)" }}>
-                      {item.direction === "IN" ? "+" : "-"}
-                      {item.qty}
-                    </span>
-                  </div>
+                  {editingMovementId === item.id && (
+                    <div className="card" style={{ marginTop: 8, marginBottom: 8, background: "#fafafa", border: "1px solid #eee" }}>
+                      <div className="frow">
+                        <div className="fg">
+                          <label>ประเภทสินค้า</label>
+                          <select
+                            value={movementEditForm.type}
+                            onChange={(e) => setMovementEditForm((current) => ({ ...current, type: e.target.value }))}
+                          >
+                            <option value="">-- เลือกประเภท --</option>
+                            {products.map((product) => (
+                              <option key={product.id} value={product.name}>{product.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="fg">
+                          <label>จำนวนรับเข้า</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={movementEditForm.qty}
+                            onChange={(e) =>
+                              setMovementEditForm((current) => ({
+                                ...current,
+                                qty: Number(e.target.value) || 1,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="frow s1">
+                        <div className="fg">
+                          <label>หมายเหตุ</label>
+                          <input
+                            type="text"
+                            value={movementEditForm.note}
+                            onChange={(e) => setMovementEditForm((current) => ({ ...current, note: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                      <div className="frow s1">
+                        <div className="fg">
+                          <label>เหตุผลการปรับ</label>
+                          <input
+                            type="text"
+                            value={movementEditForm.reason}
+                            onChange={(e) => setMovementEditForm((current) => ({ ...current, reason: e.target.value }))}
+                            placeholder="miscount"
+                          />
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                        <button type="button" className="btnwarn" onClick={cancelEditMovement}>ยกเลิก</button>
+                        <button
+                          type="button"
+                          className="btnok btnok--fit"
+                          onClick={() => {
+                            void submitEditMovement(item.id);
+                          }}
+                        >
+                          บันทึกการแก้ไข
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             )}

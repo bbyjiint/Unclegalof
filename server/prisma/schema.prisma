@@ -74,6 +74,7 @@ model User {
   payrollRecords        PayrollRecord[]
   inventoryMovements    InventoryMovement[]
   uploadedFiles         R2File[]
+  paymentBatchesCreated PaymentBatch[]
 }
 
 model DeskItem {
@@ -147,12 +148,14 @@ model SaleRecord {
   paymentSlipImage     String?                @db.Text
   slipViewedAt         DateTime?
   paidAt               DateTime?
+  paymentBatchId       String?                @db.Uuid
   /// User who created this sale row (audit / accountability); not cleared on shared edits.
   createdByUserId      String?                @db.Uuid
   deskItem             DeskItem               @relation(fields: [deskType], references: [id], onDelete: Restrict, onUpdate: Cascade)
   deliveryFee          DeliveryFee?           @relation(fields: [deliveryRange], references: [range])
   promotion            Promotion?             @relation(fields: [appliedPromotion], references: [id], onDelete: Restrict, onUpdate: Cascade)
   createdBy            User?                  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  paymentBatch         PaymentBatch?          @relation(fields: [paymentBatchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   commissions          SaleRecordCommission[]
   tenantOwner          User                   @relation("SaleTenant", fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
@@ -160,6 +163,24 @@ model SaleRecord {
   @@index([deskType])
   @@index([appliedPromotion])
   @@index([deliveryRange])
+  @@index([createdByUserId])
+  @@index([paymentBatchId])
+}
+
+model PaymentBatch {
+  id               String       @id @default(uuid()) @db.Uuid
+  batchNumber      String       @unique
+  totalAmount      Int
+  transferAmount   Int?
+  paymentSlipImage String       @db.Text
+  note             String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  createdByUserId  String?      @db.Uuid
+  createdBy        User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  saleRecords      SaleRecord[]
+
+  @@index([createdAt])
   @@index([createdByUserId])
 }
 

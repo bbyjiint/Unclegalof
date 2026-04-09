@@ -69,6 +69,9 @@ export interface Sale {
   createdByUserId?: string | null;
   createdByUsername?: string | null;
   createdByName?: string | null;
+  paymentBatchId?: string | null;
+  paymentBatchNumber?: string | null;
+  paymentBatchTotalAmount?: number | null;
   /** OWNER-only: mean of recorded purchase ต้นทุน/หน่วย at sale time */
   avgUnitCost?: number;
   /** OWNER-only: COGS for this line */

@@ -12,7 +12,9 @@
     "prisma:migrate": "node scripts/prisma-cli.mjs migrate dev",
     "prisma:migrate:deploy": "node scripts/prisma-cli.mjs migrate deploy",
     "prisma:seed": "node prisma/seed.js",
-    "prisma:studio": "node scripts/prisma-cli.mjs studio"
+    "prisma:studio": "node scripts/prisma-cli.mjs studio",
+    "backfill:remove-legacy-ice-fee": "node scripts/backfill-remove-legacy-ice-fee.mjs",
+    "backfill:sale-order-compat": "node scripts/backfill-sale-order-compat.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1022.0",

@@ -78,6 +78,12 @@ type AddInventoryStockPayload = {
   qty: number;
   note: string;
 };
+type UpdateInventoryMovementPayload = {
+  type: string;
+  qty: number;
+  note: string;
+  reason?: string;
+};
 
 type InventoryProductPayload = {
   name: string;
@@ -108,6 +114,12 @@ type CreateSalePayload = {
 
 type UploadSalePaymentSlipPayload = {
   fileUrl: string;
+};
+type CreateBatchPaymentPayload = {
+  saleIds: string[];
+  fileUrl: string;
+  transferAmount?: number;
+  note?: string;
 };
 
 type PresignUploadPayload = {
@@ -251,6 +263,11 @@ export const api = {
   inventorySummary: () => request<InventorySummaryResponse>("/inventory/summary"),
   addInventoryStock: (payload: AddInventoryStockPayload) =>
     request("/inventory/movements/stock-in", { method: "POST", body: JSON.stringify(payload) }),
+  updateInventoryMovement: (id: string, payload: UpdateInventoryMovementPayload) =>
+    request<{ movement: { id: string } }>(`/inventory/movements/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   inventoryLots: () => request<{ items: InventoryLotRow[] }>("/inventory/lots"),
   inventoryBatchLots: (payload: {
     note?: string;
@@ -272,6 +289,17 @@ export const api = {
   createSale: (payload: CreateSalePayload) => request("/sales", { method: "POST", body: JSON.stringify(payload) }),
   uploadSalePaymentSlip: (id: string, payload: UploadSalePaymentSlipPayload) =>
     request(`/sales/${id}/payment-slip`, { method: "PATCH", body: JSON.stringify(payload) }),
+  createBatchPayment: (payload: CreateBatchPaymentPayload) =>
+    request<{
+      batch: {
+        id: string;
+        batchNumber: string;
+        totalAmount: number;
+        transferAmount: number | null;
+        paymentSlipImage: string;
+        saleCount: number;
+      };
+    }>("/sales/batch-payment", { method: "POST", body: JSON.stringify(payload) }),
   removeSalePaymentSlip: (id: string) =>
     request(`/sales/${id}/payment-slip`, { method: "DELETE" }),
   markSaleSlipViewed: (id: string) =>

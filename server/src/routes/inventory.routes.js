@@ -14,6 +14,12 @@ const frontendStockInSchema = z.object({
   qty: z.number().int().positive(),
   note: z.string().optional().default(""),
 });
+const patchMovementSchema = z.object({
+  type: z.string().min(1),
+  qty: z.number().int().positive(),
+  note: z.string().optional().default(""),
+  reason: z.string().optional().default("miscount"),
+});
 
 const batchLotsSchema = z.object({
   note: z.string().optional().default(""),
@@ -326,6 +332,154 @@ router.post(
         lot: lotPayload,
         movement: movementToFrontend(result.movement),
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PATCH /api/inventory/movements/:id - Adjust stock-in via audit movements (with reason)
+router.patch(
+  "/movements/:id",
+  authenticate,
+  requireSales,
+  writeRateLimiter,
+  validate(paramsIdSchema, "params"),
+  validate(patchMovementSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const payload = req.body;
+
+      const movement = await prisma.inventoryMovement.findUnique({
+        where: { id },
+      });
+
+      if (!movement) {
+        return res.status(404).json({ error: "Movement not found" });
+      }
+      if (movement.direction !== InventoryDirection.IN) {
+        return res.status(400).json({ error: "Only stock-in movements can be edited" });
+      }
+
+      const targetDeskItem = await prisma.deskItem.findFirst({
+        where: { name: payload.type },
+      });
+      if (!targetDeskItem) {
+        return res.status(404).json({
+          error: `Desk item "${payload.type}" not found. Please create it first in catalog.`,
+        });
+      }
+
+      const nextQty = Number(payload.qty);
+      const nextNote = payload.note?.trim() || null;
+      const reason = payload.reason?.trim() || "miscount";
+
+      const updatedMovement = await prisma.$transaction(async (tx) => {
+        const lot = movement.inventoryLotId
+          ? await tx.inventoryLot.findUnique({ where: { id: movement.inventoryLotId } })
+          : null;
+
+        if (!lot) {
+          throw Object.assign(new Error("Linked lot not found for this movement"), { statusCode: 404 });
+        }
+
+        const consumedQty = Math.max(0, lot.qty - lot.remainingQty);
+        const currentDeskItemId = lot.deskItemId;
+        const currentQty = lot.qty;
+
+        // Same product: adjust quantity and record delta as movement for audit trail.
+        if (targetDeskItem.id === currentDeskItemId) {
+          if (nextQty < consumedQty) {
+            throw Object.assign(new Error("New quantity cannot be less than already consumed quantity"), {
+              statusCode: 400,
+            });
+          }
+
+          const delta = nextQty - currentQty;
+          const nextRemainingQty = nextQty - consumedQty;
+
+          await tx.inventoryLot.update({
+            where: { id: lot.id },
+            data: {
+              qty: nextQty,
+              remainingQty: nextRemainingQty,
+              note: nextNote,
+            },
+          });
+
+          if (delta !== 0) {
+            await tx.inventoryMovement.create({
+              data: {
+                deskItemId: currentDeskItemId,
+                inventoryLotId: lot.id,
+                direction: delta > 0 ? InventoryDirection.IN : InventoryDirection.OUT,
+                qty: Math.abs(delta),
+                note: `Inventory Adjustment: ${reason}`,
+                createdByUserId: req.user.id,
+              },
+            });
+          }
+        } else {
+          // Product type correction: reverse old lot and create a new corrected lot.
+          if (consumedQty > 0) {
+            throw Object.assign(
+              new Error("Cannot change product type after this lot has already been consumed"),
+              { statusCode: 409 }
+            );
+          }
+
+          if (currentQty > 0) {
+            await tx.inventoryMovement.create({
+              data: {
+                deskItemId: currentDeskItemId,
+                inventoryLotId: lot.id,
+                direction: InventoryDirection.OUT,
+                qty: currentQty,
+                note: `Inventory Adjustment: ${reason} (type correction out)`,
+                createdByUserId: req.user.id,
+              },
+            });
+          }
+
+          await tx.inventoryLot.update({
+            where: { id: lot.id },
+            data: {
+              qty: 0,
+              remainingQty: 0,
+              note: `Replaced by correction (${reason})`,
+            },
+          });
+
+          const newLot = await tx.inventoryLot.create({
+            data: {
+              deskItemId: targetDeskItem.id,
+              qty: nextQty,
+              remainingQty: nextQty,
+              costPerUnit: lot.costPerUnit ?? 0,
+              note: nextNote,
+            },
+          });
+
+          await tx.inventoryMovement.create({
+            data: {
+              deskItemId: targetDeskItem.id,
+              inventoryLotId: newLot.id,
+              direction: InventoryDirection.IN,
+              qty: nextQty,
+              note: `Inventory Adjustment: ${reason} (type correction in)`,
+              createdByUserId: req.user.id,
+            },
+          });
+        }
+
+        return tx.inventoryMovement.findUnique({
+          where: { id: movement.id },
+          include: { deskItem: true },
+        });
+      });
+
+      res.json({ movement: movementToFrontend(updatedMovement) });
     } catch (error) {
       next(error);
     }

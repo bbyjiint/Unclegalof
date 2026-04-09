@@ -42,6 +42,7 @@ router.get(
           promotion: true,
           deskItem: true,
           deliveryFee: true,
+          paymentBatch: true,
           createdBy: {
             select: {
               id: true,
