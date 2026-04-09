@@ -21,6 +21,14 @@ const patchMovementSchema = z.object({
   reason: z.string().optional().default("miscount"),
 });
 
+/** คนขาย/เจ้าของ: บันทึกเพิ่มหรือลดสต็อกเมื่อลงผิด (มีประวัติ IN/OUT แยกรายการ) */
+const manualAdjustSchema = z.object({
+  type: z.string().min(1),
+  direction: z.enum(["IN", "OUT"]),
+  qty: z.number().int().positive(),
+  reason: z.string().min(1).max(500),
+});
+
 const batchLotsSchema = z.object({
   note: z.string().optional().default(""),
   items: z
@@ -234,7 +242,7 @@ router.get(
 
       const movements = await prisma.inventoryMovement.findMany({
         orderBy: { createdAt: "desc" },
-        take: 100,
+        take: 200,
         include: { deskItem: true },
       });
 
@@ -331,6 +339,120 @@ router.post(
       res.status(201).json({
         lot: lotPayload,
         movement: movementToFrontend(result.movement),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/inventory/movements/manual-adjust — เพิ่มหรือลดสต็อกด้วยมือ (FIFO เมื่อลด)
+router.post(
+  "/movements/manual-adjust",
+  authenticate,
+  requireSales,
+  writeRateLimiter,
+  validate(manualAdjustSchema),
+  async (req, res, next) => {
+    try {
+      const payload = req.body;
+      const deskItem = await prisma.deskItem.findFirst({
+        where: { name: payload.type },
+      });
+      if (!deskItem) {
+        return res.status(404).json({
+          error: `Desk item "${payload.type}" not found. Please create it first in catalog.`,
+        });
+      }
+
+      const reason = String(payload.reason).trim();
+      const qty = Number(payload.qty);
+
+      if (payload.direction === "IN") {
+        const noteIn = `ปรับสต็อก — เพิ่ม: ${reason}`;
+        const result = await prisma.$transaction(async (tx) => {
+          const lot = await tx.inventoryLot.create({
+            data: {
+              deskItemId: deskItem.id,
+              qty,
+              remainingQty: qty,
+              costPerUnit: 0,
+              note: noteIn,
+            },
+          });
+          const movement = await tx.inventoryMovement.create({
+            data: {
+              deskItemId: deskItem.id,
+              inventoryLotId: lot.id,
+              direction: InventoryDirection.IN,
+              qty,
+              note: noteIn,
+              createdByUserId: req.user.id,
+            },
+            include: { deskItem: true },
+          });
+          return movement;
+        });
+        return res.status(201).json({ movement: movementToFrontend(result) });
+      }
+
+      const noteOut = `ปรับสต็อก — ลด: ${reason}`;
+      const movementsOut = await prisma.$transaction(async (tx) => {
+        let remaining = qty;
+        const created = [];
+        const sourceLots = await tx.inventoryLot.findMany({
+          where: {
+            deskItemId: deskItem.id,
+            remainingQty: { gt: 0 },
+          },
+          orderBy: { createdAt: "asc" },
+        });
+
+        for (const lot of sourceLots) {
+          if (remaining <= 0) break;
+          const takeQty = Math.min(lot.remainingQty, remaining);
+          if (takeQty <= 0) continue;
+
+          await tx.inventoryLot.update({
+            where: { id: lot.id },
+            data: { remainingQty: lot.remainingQty - takeQty },
+          });
+
+          const m = await tx.inventoryMovement.create({
+            data: {
+              deskItemId: deskItem.id,
+              inventoryLotId: lot.id,
+              direction: InventoryDirection.OUT,
+              qty: takeQty,
+              note: noteOut,
+              createdByUserId: req.user.id,
+            },
+            include: { deskItem: true },
+          });
+          created.push(m);
+          remaining -= takeQty;
+        }
+
+        if (remaining > 0) {
+          const m = await tx.inventoryMovement.create({
+            data: {
+              deskItemId: deskItem.id,
+              inventoryLotId: null,
+              direction: InventoryDirection.OUT,
+              qty: remaining,
+              note: `${noteOut} (ยอดคงคลังไม่พอ — บันทึกขาด ${remaining} ชิ้น)`,
+              createdByUserId: req.user.id,
+            },
+            include: { deskItem: true },
+          });
+          created.push(m);
+        }
+
+        return created;
+      });
+
+      return res.status(201).json({
+        movements: movementsOut.map((m) => movementToFrontend(m)),
       });
     } catch (error) {
       next(error);

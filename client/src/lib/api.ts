@@ -78,6 +78,14 @@ type AddInventoryStockPayload = {
   qty: number;
   note: string;
 };
+
+type ManualInventoryAdjustPayload = {
+  type: string;
+  direction: "IN" | "OUT";
+  qty: number;
+  reason: string;
+};
+
 type UpdateInventoryMovementPayload = {
   type: string;
   qty: number;
@@ -263,6 +271,11 @@ export const api = {
   inventorySummary: () => request<InventorySummaryResponse>("/inventory/summary"),
   addInventoryStock: (payload: AddInventoryStockPayload) =>
     request("/inventory/movements/stock-in", { method: "POST", body: JSON.stringify(payload) }),
+  manualInventoryAdjust: (payload: ManualInventoryAdjustPayload) =>
+    request<{ movement?: { id: string }; movements?: { id: string }[] }>(
+      "/inventory/movements/manual-adjust",
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
   updateInventoryMovement: (id: string, payload: UpdateInventoryMovementPayload) =>
     request<{ movement: { id: string } }>(`/inventory/movements/${id}`, {
       method: "PATCH",

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { CheckCircle2, Clock, Package, Pencil, PlusCircle, Receipt, Trash2 } from "lucide-react";
+import { CheckCircle2, Clock, Package, Pencil, PlusCircle, Receipt, Scale, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import type { InventoryMovement, InventorySummaryItem, ProductItem } from "../types";
 
@@ -22,6 +22,13 @@ type MovementEditFormState = {
   reason: string;
 };
 
+type ManualAdjustFormState = {
+  direction: "IN" | "OUT";
+  type: string;
+  qty: number;
+  reason: string;
+};
+
 export default function InventoryPage() {
   const [summary, setSummary] = useState<InventorySummaryItem[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -35,6 +42,12 @@ export default function InventoryPage() {
     qty: 1,
     note: "",
     reason: "miscount",
+  });
+  const [manualAdjustForm, setManualAdjustForm] = useState<ManualAdjustFormState>({
+    direction: "IN",
+    type: "",
+    qty: 1,
+    reason: "",
   });
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -50,6 +63,9 @@ export default function InventoryPage() {
       setProducts(productData.items || []);
       if (!form.type && productData.items?.[0]?.name) {
         setForm((current) => ({ ...current, type: productData.items[0].name }));
+      }
+      if (!manualAdjustForm.type && productData.items?.[0]?.name) {
+        setManualAdjustForm((current) => ({ ...current, type: productData.items[0].name }));
       }
     } catch (error) {
       console.error("Failed to load inventory:", error);
@@ -85,6 +101,45 @@ export default function InventoryPage() {
       } else {
         alert(errorMessage);
       }
+    }
+  }
+
+  async function handleManualAdjust(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!manualAdjustForm.type.trim()) {
+      alert("กรุณาเลือกประเภทสินค้า");
+      return;
+    }
+    const reason = manualAdjustForm.reason.trim();
+    if (!reason) {
+      alert("กรุณาระบุเหตุผล (เพื่อประวัติการแก้ไข)");
+      return;
+    }
+    const qty = Number(manualAdjustForm.qty);
+    if (!Number.isFinite(qty) || qty < 1) {
+      alert("จำนวนต้องเป็นตัวเลขบวก");
+      return;
+    }
+    const dirLabel = manualAdjustForm.direction === "IN" ? "เพิ่ม" : "ลด";
+    if (
+      !window.confirm(
+        `ยืนยันปรับสต็อก: ${dirLabel} ${qty} ชุด (${manualAdjustForm.type.trim()})\nเหตุผล: ${reason}`
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.manualInventoryAdjust({
+        type: manualAdjustForm.type.trim(),
+        direction: manualAdjustForm.direction,
+        qty,
+        reason,
+      });
+      setManualAdjustForm((current) => ({ ...current, qty: 1, reason: "" }));
+      await loadPage();
+    } catch (error) {
+      console.error("Failed to adjust inventory:", error);
+      alert(error instanceof Error ? error.message : "บันทึกการปรับสต็อกไม่สำเร็จ");
     }
   }
 
@@ -202,13 +257,33 @@ export default function InventoryPage() {
     secondaryText: string | null;
   } {
     const rawNote = String(movement.note || "").trim();
+
+    if (/^ปรับสต็อก/.test(rawNote)) {
+      const isIn = movement.direction === "IN";
+      return {
+        badgeLabel: isIn ? "ปรับเพิ่มสต็อก" : "ปรับลดสต็อก",
+        badgeStyle: isIn
+          ? {
+              background: "#dcfce7",
+              color: "#166534",
+              border: "1px solid #bbf7d0",
+            }
+          : {
+              background: "#fee2e2",
+              color: "#b91c1c",
+              border: "1px solid #fecaca",
+            },
+        secondaryText: rawNote,
+      };
+    }
+
     const adjustmentMatch = rawNote.match(/^(inventory adjustment|adjustment)\s*:?\s*(.*)$/i);
 
     if (adjustmentMatch) {
       const reason = (adjustmentMatch[2] || "").trim();
       const isNegative = movement.direction === "OUT";
       return {
-        badgeLabel: "Inventory Adjustment",
+        badgeLabel: "ปรับแก้รายการรับเข้า",
         badgeStyle: isNegative
           ? {
               background: "#fee2e2",
@@ -220,13 +295,13 @@ export default function InventoryPage() {
               color: "#166534",
               border: "1px solid #bbf7d0",
             },
-        secondaryText: reason ? `Reason: ${reason}` : "Reason: manual correction",
+        secondaryText: reason ? `เหตุผล: ${reason}` : "ปรับสต็อกจากการแก้รายการรับเข้า",
       };
     }
 
     if (/^sale(\s+order)?\s+/i.test(rawNote)) {
       return {
-        badgeLabel: "Sale Order",
+        badgeLabel: "ขายออก",
         badgeStyle: {
           background: "#dbeafe",
           color: "#1d4ed8",
@@ -237,7 +312,7 @@ export default function InventoryPage() {
     }
 
     return {
-      badgeLabel: movement.direction === "IN" ? "Stock In" : "Stock Out",
+      badgeLabel: movement.direction === "IN" ? "รับเข้าคลัง" : "ตัดออกคลัง",
       badgeStyle: {
         background: "#f1f5f9",
         color: "#475569",
@@ -313,11 +388,87 @@ export default function InventoryPage() {
             )}
           </form>
 
+          <form className="card" onSubmit={(e) => void handleManualAdjust(e)}>
+            <h3 className="h-with-icon">
+              <Scale size={20} strokeWidth={2} aria-hidden />
+              แก้สต็อกเมื่อลงผิด
+            </h3>
+            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+              บันทึก<strong> เพิ่ม</strong>หรือ<strong> ลด</strong>สต็อกพร้อมเหตุผล — ระบบจะเก็บในประวัติเป็นรายการ + / − แยกชัด
+              (ลดสต็อกจะตัดจากล็อตคงคลังแบบ FIFO เหมือนตอนขาย) หรือแก้จำนวนในรายการ<strong> รับเข้าเดิม</strong>ได้ที่ปุ่มดินสอในรายการด้านล่าง
+            </p>
+            <div className="frow">
+              <div className="fg">
+                <label>ทิศทาง</label>
+                <select
+                  value={manualAdjustForm.direction}
+                  onChange={(e) =>
+                    setManualAdjustForm((current) => ({
+                      ...current,
+                      direction: e.target.value as "IN" | "OUT",
+                    }))
+                  }
+                >
+                  <option value="IN">เพิ่มสต็อก (แก้ที่ลงขาด / นับขาด)</option>
+                  <option value="OUT">ลดสต็อก (แก้ที่ลงเกิน / นับเกิน)</option>
+                </select>
+              </div>
+              <div className="fg">
+                <label>ประเภทสินค้า</label>
+                <select
+                  value={manualAdjustForm.type}
+                  onChange={(e) => setManualAdjustForm((current) => ({ ...current, type: e.target.value }))}
+                  required
+                >
+                  <option value="">-- เลือกประเภท --</option>
+                  {products.map((item) => (
+                    <option key={item.id} value={item.name}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="frow">
+              <div className="fg">
+                <label>จำนวน (ชุด)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={manualAdjustForm.qty}
+                  onChange={(e) =>
+                    setManualAdjustForm((current) => ({
+                      ...current,
+                      qty: Number(e.target.value) || 1,
+                    }))
+                  }
+                  required
+                />
+              </div>
+              <div className="fg">
+                <label>เหตุผลการปรับ (บันทึกในประวัติ)</label>
+                <input
+                  type="text"
+                  value={manualAdjustForm.reason}
+                  onChange={(e) => setManualAdjustForm((current) => ({ ...current, reason: e.target.value }))}
+                  placeholder="เช่น นับซ้ำแล้วถูกต้อง / ลงผิดรุ่น"
+                  required
+                />
+              </div>
+            </div>
+            <button className="btnok" type="submit" disabled={!manualAdjustForm.type}>
+              บันทึกการปรับสต็อก
+            </button>
+          </form>
+
           <section className="card">
             <h3 className="h-with-icon">
               <Clock size={20} strokeWidth={2} aria-hidden />
               ประวัติการรับ/ขาย
             </h3>
+            <p style={{ margin: "-6px 0 12px", fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
+              แสดงรับเข้า (+) ตัดออก (−) การขาย การปรับสต็อก และการแก้รายการรับเข้า — เรียงจากใหม่ไปเก่า (สูงสุด 200 รายการ)
+            </p>
             {movements.length === 0 ? (
               <div className="empty"><p>ยังไม่มีรายการ</p></div>
             ) : (
@@ -417,7 +568,7 @@ export default function InventoryPage() {
                             type="text"
                             value={movementEditForm.reason}
                             onChange={(e) => setMovementEditForm((current) => ({ ...current, reason: e.target.value }))}
-                            placeholder="miscount"
+                            placeholder="เช่น นับผิด / ลงจำนวนผิด"
                           />
                         </div>
                       </div>

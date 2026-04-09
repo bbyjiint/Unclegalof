@@ -50,6 +50,7 @@ export function saleRecordToSale(saleRecord, sequence = null, options = {}) {
     note: saleRecord.remarks || null,
     customerName: saleRecord.customerName || null,
     customerPhone: saleRecord.customerPhone || null,
+    deliveryCompletedAt: saleRecord.deliveryCompletedAt?.toISOString() || null,
     deliveryAddress: saleRecord.deliveryAddress || null,
     paymentSlipImage: saleRecord.paymentSlipImage || null,
     slipViewedAt: saleRecord.slipViewedAt?.toISOString() || null,

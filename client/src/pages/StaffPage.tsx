@@ -28,6 +28,13 @@ import type {
   SalesCommissionInsights
 } from "../types";
 
+function formatSaleDateThMedium(isoDate?: string | null): string {
+  if (!isoDate) return "—";
+  const d = new Date(isoDate.includes("T") ? isoDate : `${isoDate}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("th-TH", { dateStyle: "medium" });
+}
+
 type StaffFormState = {
   date: string;
   type: string;
@@ -396,7 +403,7 @@ export default function StaffPage() {
   }
 
   return (
-    <main className="wrap">
+    <main className="wrap staff-page">
       {user?.role === "SALES" && commissionInsights ? (
         <section
           className="card"
@@ -628,9 +635,9 @@ export default function StaffPage() {
         </button>
       </form>
 
-      <section>
+      <section className="staff-sales-section">
         <div
-          className="card"
+          className="card staff-batch-card"
           style={{
             marginBottom: 12,
             borderLeft: "4px solid #2563eb",
@@ -644,7 +651,7 @@ export default function StaffPage() {
           <p style={{ margin: "4px 0 10px", fontSize: 13, color: "#334155" }}>
             เลือกออเดอร์ค้างชำระ/มัดจำ อย่างน้อย 2 รายการ แล้วแนบสลิปโอนครั้งเดียว
           </p>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="staff-batch-card__row">
             <input
               ref={batchSlipInputRef}
               type="file"
@@ -712,36 +719,62 @@ export default function StaffPage() {
                     เลือกเข้ากลุ่มสลิปรวม
                   </label>
                 ) : null}
-                <div className="sdetail">
-                  <span>{sale.type}</span>
-                  <span>x{sale.qty}</span>
-                  <span className={`bdg with-icon-sm ${sale.delivery === "delivery" ? "del" : "pick"}`}>
-                    {sale.delivery === "delivery" ? (
-                      <>
-                        <Truck size={11} strokeWidth={2.5} aria-hidden />
-                        ส่งบ้าน
-                      </>
-                    ) : (
-                      <>
-                        <Warehouse size={11} strokeWidth={2.5} aria-hidden />
-                        รับเอง
-                      </>
-                    )}
-                  </span>
-                  <span className={`bdg ${sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "dep" : "pend"}`}>
-                    {getPayStatusLabel(sale.payStatus)}
-                  </span>
-                  {sale.paymentBatchNumber ? (
-                    <span
-                      className="bdg"
-                      style={{
-                        background: "#dbeafe",
-                        color: "#1d4ed8",
-                        border: "1px solid #bfdbfe",
-                      }}
-                    >
-                      สลิปรวม
+                <div className="staff-sale-meta">
+                  <div className="staff-sale-kv">
+                    <span className="staff-sale-kv-label">วันที่ขาย</span>
+                    <span className="staff-sale-kv-val">{formatSaleDateThMedium(sale.date)}</span>
+                  </div>
+                  <div className="staff-sale-kv">
+                    <span className="staff-sale-kv-label">ขนาด / รุ่น</span>
+                    <span className="staff-sale-kv-val">
+                      {sale.type} × {sale.qty} ชุด
                     </span>
+                  </div>
+                  <div className="staff-sale-badges">
+                    <span className={`bdg with-icon-sm ${sale.delivery === "delivery" ? "del" : "pick"}`}>
+                      {sale.delivery === "delivery" ? (
+                        <>
+                          <Truck size={11} strokeWidth={2.5} aria-hidden />
+                          ส่งบ้าน
+                        </>
+                      ) : (
+                        <>
+                          <Warehouse size={11} strokeWidth={2.5} aria-hidden />
+                          รับเอง
+                        </>
+                      )}
+                    </span>
+                    <span className={`bdg ${sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "dep" : "pend"}`}>
+                      {getPayStatusLabel(sale.payStatus)}
+                    </span>
+                    {sale.delivery === "delivery" ? (
+                      sale.deliveryCompletedAt ? (
+                        <span className="bdg with-icon-sm ship-done">ส่งแล้ว</span>
+                      ) : (
+                        <span className="bdg with-icon-sm ship-wait">รอส่ง</span>
+                      )
+                    ) : null}
+                    {sale.paymentBatchNumber ? (
+                      <span
+                        className="bdg"
+                        style={{
+                          background: "#dbeafe",
+                          color: "#1d4ed8",
+                          border: "1px solid #bfdbfe",
+                        }}
+                      >
+                        สลิปรวม
+                      </span>
+                    ) : null}
+                  </div>
+                  {sale.delivery === "delivery" && sale.deliveryCompletedAt ? (
+                    <div className="staff-sale-ship-confirm">
+                      ยืนยันจัดส่ง{" "}
+                      {new Date(sale.deliveryCompletedAt).toLocaleString("th-TH", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      })}
+                    </div>
                   ) : null}
                 </div>
                 <div className="smeta" style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>

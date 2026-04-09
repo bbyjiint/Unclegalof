@@ -146,6 +146,13 @@ div.h-with-icon {
   padding: 20px 14px;
 }
 
+.staff-batch-card__row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .owrap {
   max-width: 980px;
   margin: 0 auto;
@@ -685,9 +692,9 @@ button[type="submit"] {
 .sitem {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: clamp(8px, 2vw, 12px);
   margin-bottom: 8px;
-  padding: 13px 14px;
+  padding: clamp(10px, 2.5vw, 13px) clamp(11px, 3vw, 14px);
   border-left: 4px solid var(--green);
   border-radius: 12px;
   background: white;
@@ -707,6 +714,71 @@ button[type="submit"] {
   min-width: 0;
 }
 
+.staff-sale-meta {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.staff-sale-kv {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-start;
+  column-gap: 10px;
+  row-gap: 4px;
+}
+
+.staff-sale-kv-label {
+  font-size: clamp(10px, 0.45rem + 0.85vw, 12px);
+  font-weight: 700;
+  color: #636366;
+  font-family: "Prompt", sans-serif;
+  flex-shrink: 0;
+}
+
+.staff-sale-kv-val {
+  font-size: clamp(11px, 0.5rem + 1vw, 13px);
+  font-weight: 700;
+  color: #1c1c1e;
+  font-family: "Prompt", sans-serif;
+  text-align: left;
+  flex: 0 1 auto;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.staff-sale-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.staff-sale-ship-confirm {
+  font-size: clamp(10px, 0.5rem + 0.85vw, 12px);
+  color: #8e8e93;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.staff-sale-badges .bdg {
+  font-size: clamp(10px, 0.48rem + 0.9vw, 11px);
+  padding: 2px clamp(6px, 1.8vw, 8px);
+}
+
+.bdg.ship-wait {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.bdg.ship-done {
+  background: var(--green-pale);
+  color: var(--green);
+}
+
 .sitem-right {
   display: flex;
   flex-direction: column;
@@ -719,6 +791,8 @@ button[type="submit"] {
 
 .sitem-right .sprice {
   margin: 0;
+  font-size: clamp(14px, 0.75rem + 1.8vw, 18px);
+  line-height: 1.25;
 }
 
 .sale-actions {
@@ -791,6 +865,11 @@ button.sale-slip-link {
   color: var(--gray);
   font-size: 11px;
   font-weight: 700;
+}
+
+.soid {
+  font-size: clamp(13px, 0.68rem + 1.5vw, 16px);
+  line-height: 1.3;
 }
 
 .soid,
@@ -1160,5 +1239,125 @@ th {
 
   .auth-hero-brand {
     margin-bottom: 26px;
+  }
+
+  /* —— Staff page / รายการขาย (mobile) —— */
+  .wrap.staff-page {
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+    padding-bottom: max(24px, env(safe-area-inset-bottom, 0px) + 16px);
+  }
+
+  .staff-batch-card h3.h-with-icon {
+    font-size: clamp(14px, 4vw, 15px);
+    flex-wrap: wrap;
+  }
+
+  .staff-batch-card__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .staff-batch-card__row .sale-action-btn--prominent {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .staff-batch-card__row > span {
+    text-align: center;
+    font-size: clamp(11px, 3.2vw, 12px);
+    line-height: 1.4;
+  }
+
+  .staff-sales-section .sitem {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: 10px;
+    row-gap: 10px;
+    align-items: start;
+  }
+
+  .staff-sales-section .sitem-l {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .staff-sales-section .bdel {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    align-self: start;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+    margin: -6px -4px 0 0;
+    touch-action: manipulation;
+  }
+
+  .staff-sales-section .sitem-right {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex-direction: column;
+    align-items: stretch;
+    align-self: stretch;
+    text-align: left;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #eef0f2;
+    margin: 0;
+  }
+
+  .staff-sales-section .sitem-right .sprice {
+    width: 100%;
+    text-align: left;
+  }
+
+  .staff-sales-section .sale-actions--staff-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    justify-items: stretch;
+    margin-top: 0;
+  }
+
+  .staff-sales-section .sale-actions--staff-row .sale-action-btn--prominent {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: center;
+    touch-action: manipulation;
+  }
+
+  .staff-sales-section .sale-actions--staff-row .sale-slip-link--staff {
+    width: 100%;
+    justify-content: center;
+    touch-action: manipulation;
+  }
+
+  .slist-title.with-icon {
+    font-size: clamp(12px, 3.5vw, 13px);
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Staff sales list — ขนาดตัวอักษร/ปุ่ม */
+  .sale-action-btn--prominent {
+    font-size: clamp(13px, 3.6vw, 14px);
+    padding: 10px 14px;
+    min-height: 44px;
+  }
+
+  .sale-slip-link--staff {
+    font-size: clamp(12px, 3.2vw, 13px);
+    padding: 8px 12px;
+    min-height: 44px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
   }
 }

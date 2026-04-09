@@ -60,6 +60,8 @@ export interface Sale {
   note?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
+  /** ออเดอร์จัดส่ง: เวลาที่กดยืนยันจัดส่งสำเร็จ (ISO) */
+  deliveryCompletedAt?: string | null;
   deliveryAddress?: string | null;
   paymentSlipImage?: string | null;
   slipViewedAt?: string | null;
