@@ -5,7 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireSales } from "../middleware/authorize.middleware.js";
-import { saleRecordToSale } from "../lib/adapters.js";
+import { saleRecordFrontendInclude, saleRecordsToFrontendSales } from "../lib/salesOrders.js";
 
 const router = Router();
 
@@ -38,24 +38,12 @@ router.get(
           },
           ...(req.role === UserRole.SALES ? { createdByUserId: req.user.id } : {}),
         },
-        include: {
-          promotion: true,
-          deskItem: true,
-          deliveryFee: true,
-          paymentBatch: true,
-          createdBy: {
-            select: {
-              id: true,
-              username: true,
-              fullName: true,
-            },
-          },
-        },
+        include: saleRecordFrontendInclude,
         orderBy: { createdAt: "desc" },
       });
 
       const includeCost = req.role === UserRole.OWNER;
-      const items = saleRecords.map((sale, index) => saleRecordToSale(sale, index, { includeCost }));
+      const items = saleRecordsToFrontendSales(saleRecords, { includeCost });
       res.json({ items });
     } catch (error) {
       next(error);

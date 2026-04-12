@@ -4,9 +4,10 @@ import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireOwner } from "../middleware/authorize.middleware.js";
-import { saleRecordToSale, promotionToFrontend } from "../lib/adapters.js";
+import { promotionToFrontend } from "../lib/adapters.js";
 import { findAllPromotionsRows } from "../lib/promotions.db.js";
 import { getAllCostPositionsForOwner } from "../lib/inventoryCost.js";
+import { saleRecordFrontendInclude, saleRecordsToFrontendSales } from "../lib/salesOrders.js";
 
 const router = Router();
 
@@ -36,24 +37,15 @@ router.get(
           },
         },
         include: {
-          promotion: true,
-          deskItem: true,
+          ...saleRecordFrontendInclude,
           commissions: true,
-          paymentBatch: true,
-          createdBy: {
-            select: {
-              id: true,
-              username: true,
-              fullName: true,
-            },
-          },
         },
         orderBy: { createdAt: "desc" },
       });
 
       const promotionRows = await findAllPromotionsRows();
 
-      const sales = saleRecordsMonth.map((sale, index) => saleRecordToSale(sale, index, { includeCost: true }));
+      const sales = saleRecordsToFrontendSales(saleRecordsMonth, { includeCost: true });
 
       const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
 

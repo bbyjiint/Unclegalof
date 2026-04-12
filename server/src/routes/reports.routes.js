@@ -40,7 +40,7 @@ router.get(
         },
       });
 
-      const orderCount = saleRecords.length;
+      const orderCount = new Set(saleRecords.map((sale) => sale.salesOrderId || sale.id)).size;
       const grossIncome = saleRecords.reduce((sum, s) => sum + s.amount, 0);
       const commissionTotal = saleRecords.reduce((sum, s) => {
         const c = s.commissions?.reduce((a, b) => a + b.amount, 0) || 0;

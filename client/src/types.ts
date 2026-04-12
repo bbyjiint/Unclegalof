@@ -49,6 +49,7 @@ export interface Promotion {
 
 export interface Sale {
   id: string;
+  salesOrderId?: string | null;
   orderNumber: string;
   type: string;
   qty: number;
@@ -74,6 +75,14 @@ export interface Sale {
   paymentBatchId?: string | null;
   paymentBatchNumber?: string | null;
   paymentBatchTotalAmount?: number | null;
+  items?: Array<{
+    id: string;
+    deskItemId: string;
+    type: string;
+    qty: number;
+    price: number;
+    grandTotal: number;
+  }>;
   /** OWNER-only: mean of recorded purchase ต้นทุน/หน่วย at sale time */
   avgUnitCost?: number;
   /** OWNER-only: COGS for this line */

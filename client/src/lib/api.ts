@@ -99,11 +99,19 @@ type InventoryProductPayload = {
   deliveryPrice: number;
 };
 
-type CreateSalePayload = {
-  date: string;
-  type: string;
+type CreateSaleLinePayload = {
+  deskItemId?: string;
+  type?: string;
   qty: number;
   price: number;
+};
+
+type CreateSalePayload = {
+  date: string;
+  type?: string;
+  qty?: number;
+  price?: number;
+  items: CreateSaleLinePayload[];
   pay: "paid" | "pending" | "deposit";
   discount: number;
   manualDisc: number;

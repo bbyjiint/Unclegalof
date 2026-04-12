@@ -67,8 +67,10 @@ model User {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   createdSales          SaleRecord[]
+  createdSalesOrders    SalesOrder[]           @relation("SalesOrderCreatedBy")
   /// Sales belonging to this user as tenant owner (see SaleRecord.ownerId).
   salesAsTenantOwner    SaleRecord[]           @relation("SaleTenant")
+  salesOrdersAsTenantOwner SalesOrder[]        @relation("SalesOrderTenant")
   repairRecordsReported RepairRecord[]
   saleCommissions       SaleRecordCommission[]
   payrollRecords        PayrollRecord[]
@@ -85,6 +87,7 @@ model DeskItem {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   saleRecords   SaleRecord[]
+  salesOrderLines SalesOrderLine[]
   repairRecords RepairRecord[]
   inventoryLots InventoryLot[]
   inventoryMovements InventoryMovement[]
@@ -99,6 +102,7 @@ model DeliveryFee {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   saleRecords SaleRecord[]
+  salesOrders SalesOrder[]
 }
 
 model Promotion {
@@ -110,6 +114,70 @@ model Promotion {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   saleRecords SaleRecord[]
+  salesOrders SalesOrder[]
+}
+
+model SalesOrder {
+  id                   String            @id @default(uuid()) @db.Uuid
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  ownerId              String            @db.Uuid
+  saleDate             DateTime
+  orderNumber          String            @unique
+  status               Status            @default(pending)
+  appliedPromotion     String?           @db.Uuid
+  promoDiscountTotal   Int               @default(0)
+  manualDiscount       Int               @default(0)
+  manualDiscountReason String?
+  subtotal             Int               @default(0)
+  grandTotal           Int               @default(0)
+  deliveryType         DeliveryMethod    @default(selfpickup)
+  deliveryCompletedAt  DateTime?
+  deliveryRange        Int?
+  workerFee            Int               @default(0)
+  workerFeeType        String?
+  customerName         String?
+  customerPhone        String?           @db.Text
+  deliveryAddress      String?           @db.Text
+  remarks              String?
+  paymentSlipImage     String?           @db.Text
+  slipViewedAt         DateTime?
+  paidAt               DateTime?
+  createdByUserId      String?           @db.Uuid
+  createdBy            User?             @relation("SalesOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  deliveryFee          DeliveryFee?      @relation(fields: [deliveryRange], references: [range])
+  promotion            Promotion?        @relation(fields: [appliedPromotion], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  tenantOwner          User              @relation("SalesOrderTenant", fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  lines                SalesOrderLine[]
+  saleRecords          SaleRecord[]      @relation("SalesOrderSaleRecords")
+
+  @@index([saleDate])
+  @@index([appliedPromotion])
+  @@index([deliveryRange])
+  @@index([createdByUserId])
+}
+
+model SalesOrderLine {
+  id                  String       @id @default(uuid()) @db.Uuid
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  salesOrderId        String       @db.Uuid
+  lineNumber          Int
+  deskItemId          String       @db.Uuid
+  quantity            Int          @default(1)
+  unitPrice           Int
+  promoDiscount       Int          @default(0)
+  manualDiscount      Int          @default(0)
+  amount              Int
+  avgUnitCostSnapshot Int          @default(0)
+  cogsTotal           Int          @default(0)
+  grossProfit         Int          @default(0)
+  deskItem            DeskItem     @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  salesOrder          SalesOrder   @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([salesOrderId])
+  @@index([deskItemId])
+  @@unique([salesOrderId, lineNumber])
 }
 
 model SaleRecord {
@@ -149,6 +217,7 @@ model SaleRecord {
   slipViewedAt         DateTime?
   paidAt               DateTime?
   paymentBatchId       String?                @db.Uuid
+  salesOrderId         String?                @db.Uuid
   /// User who created this sale row (audit / accountability); not cleared on shared edits.
   createdByUserId      String?                @db.Uuid
   deskItem             DeskItem               @relation(fields: [deskType], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -156,6 +225,7 @@ model SaleRecord {
   promotion            Promotion?             @relation(fields: [appliedPromotion], references: [id], onDelete: Restrict, onUpdate: Cascade)
   createdBy            User?                  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   paymentBatch         PaymentBatch?          @relation(fields: [paymentBatchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  salesOrder           SalesOrder?            @relation("SalesOrderSaleRecords", fields: [salesOrderId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   commissions          SaleRecordCommission[]
   tenantOwner          User                   @relation("SaleTenant", fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
@@ -165,6 +235,7 @@ model SaleRecord {
   @@index([deliveryRange])
   @@index([createdByUserId])
   @@index([paymentBatchId])
+  @@index([salesOrderId])
 }
 
 model PaymentBatch {

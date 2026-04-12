@@ -6,6 +6,7 @@ import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { requireRole } from "../middleware/authorize.middleware.js";
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
+import { saleRecordFrontendInclude, saleRecordsToFrontendSales } from "../lib/salesOrders.js";
 
 const router = Router();
 
@@ -25,27 +26,18 @@ router.get("/", authenticate, requireRole(UserRole.OWNER, UserRole.REPAIRS), asy
       },
       orderBy: { saleDate: "desc" },
       take: 400,
-      select: {
-        id: true,
-        orderNumber: true,
-        saleDate: true,
-        amount: true,
-        customerName: true,
-        customerPhone: true,
-        deliveryAddress: true,
-        deskItem: { select: { name: true } },
-      },
+      include: saleRecordFrontendInclude,
     });
 
-    const orders = rows.map((r) => ({
-      id: r.id,
-      orderNumber: r.orderNumber,
-      saleDate: r.saleDate.toISOString(),
-      totalPrice: r.amount,
-      customerName: r.customerName,
-      customerPhone: r.customerPhone,
-      deliveryAddress: r.deliveryAddress,
-      productName: r.deskItem?.name ?? "",
+    const orders = saleRecordsToFrontendSales(rows).map((sale) => ({
+      id: sale.id,
+      orderNumber: sale.orderNumber,
+      saleDate: sale.date ? `${sale.date}T00:00:00.000Z` : new Date().toISOString(),
+      totalPrice: sale.grandTotal,
+      customerName: sale.customerName ?? null,
+      customerPhone: sale.customerPhone ?? null,
+      deliveryAddress: sale.deliveryAddress ?? null,
+      productName: sale.type,
     }));
 
     res.json({ orders });
@@ -67,9 +59,43 @@ router.patch(
     try {
       const { id } = req.params;
 
-      const sale = await prisma.saleRecord.findUnique({
+      const order = await prisma.salesOrder.findUnique({
         where: { id },
         select: { id: true, deliveryType: true, deliveryCompletedAt: true },
+      });
+
+      if (order) {
+        if (order.deliveryType !== "delivery") {
+          return res.status(400).json({ error: "Not a delivery order" });
+        }
+
+        if (order.deliveryCompletedAt) {
+          return res.status(409).json({ error: "Delivery already completed" });
+        }
+
+        const completedAt = new Date();
+        const updated = await prisma.$transaction(async (tx) => {
+          await tx.salesOrder.update({
+            where: { id },
+            data: { deliveryCompletedAt: completedAt },
+          });
+          await tx.saleRecord.updateMany({
+            where: { salesOrderId: id },
+            data: { deliveryCompletedAt: completedAt },
+          });
+          return completedAt;
+        });
+
+        res.json({
+          ok: true,
+          deliveryCompletedAt: updated.toISOString(),
+        });
+        return;
+      }
+
+      const sale = await prisma.saleRecord.findUnique({
+        where: { id },
+        select: { id: true, salesOrderId: true, deliveryType: true, deliveryCompletedAt: true },
       });
 
       if (!sale) {
@@ -82,6 +108,27 @@ router.patch(
 
       if (sale.deliveryCompletedAt) {
         return res.status(409).json({ error: "Delivery already completed" });
+      }
+
+      if (sale.salesOrderId) {
+        const completedAt = new Date();
+        const updated = await prisma.$transaction(async (tx) => {
+          await tx.salesOrder.update({
+            where: { id: sale.salesOrderId },
+            data: { deliveryCompletedAt: completedAt },
+          });
+          await tx.saleRecord.updateMany({
+            where: { salesOrderId: sale.salesOrderId },
+            data: { deliveryCompletedAt: completedAt },
+          });
+          return completedAt;
+        });
+
+        res.json({
+          ok: true,
+          deliveryCompletedAt: updated.toISOString(),
+        });
+        return;
       }
 
       const updated = await prisma.saleRecord.update({

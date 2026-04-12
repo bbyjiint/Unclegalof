@@ -37,9 +37,7 @@ function formatSaleDateThMedium(isoDate?: string | null): string {
 
 type StaffFormState = {
   date: string;
-  type: string;
-  qty: number;
-  price: number | "";
+  items: StaffFormLine[];
   pay: PayStatus;
   promoId: string;
   discount: number;
@@ -60,11 +58,29 @@ type Product = {
   deliveryPrice: number;
 };
 
+type StaffFormLine = {
+  rowId: string;
+  deskItemId: string;
+  qty: number;
+  price: number | "";
+};
+
+function makeRowId(): string {
+  return globalThis.crypto?.randomUUID?.() || `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createOrderLine(product?: Product, delivery: DeliveryMode = "delivery"): StaffFormLine {
+  return {
+    rowId: makeRowId(),
+    deskItemId: product?.id || "",
+    qty: 1,
+    price: product ? (delivery === "delivery" ? product.deliveryPrice : product.onsitePrice) : "",
+  };
+}
+
 const initialForm = (today: string): StaffFormState => ({
   date: today,
-  type: "",
-  qty: 1,
-  price: "",
+  items: [],
   pay: "pending",
   promoId: "",
   discount: 0,
@@ -95,11 +111,10 @@ export default function StaffPage() {
   const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
   const batchSlipInputRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<StaffFormState>(initialForm(today));
-
-  const selectedProduct = useMemo(
-    () => products.find((product) => product.name === form.type) || null,
-    [products, form.type]
-  );
+  /** Picker: choose one desk type, then “add to order”. */
+  const [pickDeskItemId, setPickDeskItemId] = useState<string>("");
+  const [pickQty, setPickQty] = useState<number>(1);
+  const [pickPrice, setPickPrice] = useState<number | "">("");
 
   async function loadPage(): Promise<void> {
     setLoading(true);
@@ -118,18 +133,7 @@ export default function StaffPage() {
       setPromotions(promoData.items || []);
       setSales(salesData.items || []);
       setProducts(nextProducts);
-      setForm((current) => {
-        if (current.type || nextProducts.length === 0) {
-          return current;
-        }
-
-        const firstProduct = nextProducts[0];
-        return {
-          ...current,
-          type: firstProduct.name,
-          price: current.delivery === "delivery" ? firstProduct.deliveryPrice : firstProduct.onsitePrice,
-        };
-      });
+      setPickDeskItemId((current) => (current || (nextProducts[0]?.id ?? "")));
     } catch (error) {
       console.error("Failed to load page:", error);
       alert(error instanceof Error ? error.message : "Failed to load data");
@@ -142,8 +146,29 @@ export default function StaffPage() {
     void loadPage();
   }, []);
 
-  const unitDiscount = Number(form.discount || 0) + Number(form.manualDisc || 0);
-  const unitNet = Math.max(0, Number(form.price || 0) - unitDiscount);
+  const pickProduct = useMemo(
+    () => products.find((p) => p.id === pickDeskItemId) || null,
+    [products, pickDeskItemId]
+  );
+
+  useEffect(() => {
+    if (!pickProduct) {
+      setPickPrice("");
+      return;
+    }
+    setPickPrice(form.delivery === "delivery" ? pickProduct.deliveryPrice : pickProduct.onsitePrice);
+  }, [pickProduct, form.delivery]);
+
+  const lineItems = useMemo(
+    () =>
+      form.items.map((line) => ({
+        ...line,
+        product: products.find((product) => product.id === line.deskItemId) || null,
+        lineBaseTotal: Math.max(0, Number(line.price || 0)) * Math.max(1, Number(line.qty || 1)),
+      })),
+    [form.items, products]
+  );
+  const subtotal = lineItems.reduce((sum, line) => sum + line.lineBaseTotal, 0);
   const kmNum = Number(form.km || 0);
   const zone =
     form.delivery === "delivery"
@@ -152,18 +177,7 @@ export default function StaffPage() {
         : getZoneByKm(kmNum)
       : null;
   const workerFee = form.delivery === "delivery" ? zone?.fee || 0 : 0;
-  const grandTotal = unitNet * Number(form.qty || 1) + workerFee;
-
-  useEffect(() => {
-    if (!selectedProduct) {
-      return;
-    }
-
-    setForm((current) => ({
-      ...current,
-      price: current.delivery === "delivery" ? selectedProduct.deliveryPrice : selectedProduct.onsitePrice,
-    }));
-  }, [selectedProduct, form.delivery]);
+  const grandTotal = Math.max(0, subtotal - Number(form.discount || 0) - Number(form.manualDisc || 0) + workerFee);
 
   useEffect(() => {
     const promo = promotions.find((p) => String(p.id) === String(form.promoId));
@@ -171,10 +185,14 @@ export default function StaffPage() {
       setForm((current) => ({ ...current, discount: 0 }));
       return;
     }
-    const unitPrice = Number(form.price) || 0;
-    const discount = promoUnitDiscountBaht(promo, unitPrice);
+    const discount = lineItems.reduce(
+      (sum, line) =>
+        sum +
+        promoUnitDiscountBaht(promo, Number(line.price || 0)) * Math.max(1, Number(line.qty || 1)),
+      0
+    );
     setForm((current) => ({ ...current, discount }));
-  }, [form.promoId, form.price, promotions]);
+  }, [form.promoId, lineItems, promotions]);
 
   const stats = useMemo(() => {
     const total = sales.reduce((sum, sale) => sum + Number(sale.grandTotal || 0), 0);
@@ -204,17 +222,50 @@ export default function StaffPage() {
     return "ค้างชำระ";
   }
 
-  function handleProductChange(productName: string) {
-    const product = products.find((item) => item.name === productName);
+  function addPickerToOrder(): void {
+    if (!pickDeskItemId) {
+      alert("กรุณาเลือกประเภทโต๊ะ");
+      return;
+    }
+    if (!pickProduct) {
+      alert("ไม่พบสินค้าที่เลือก");
+      return;
+    }
+    if (Number(pickQty) < 1) {
+      alert("จำนวนต้องอย่างน้อย 1 ชุด");
+      return;
+    }
+    if (pickPrice === "" || Number(pickPrice) < 0) {
+      alert("กรุณากรอกราคาขายต่อชุด");
+      return;
+    }
+    const qtyAdd = Number(pickQty);
+    const priceNum = Number(pickPrice);
+    setForm((current) => {
+      const matchIdx = current.items.findIndex(
+        (line) =>
+          line.deskItemId === pickDeskItemId && Number(line.price || 0) === priceNum
+      );
+      if (matchIdx !== -1) {
+        return {
+          ...current,
+          items: current.items.map((line, i) =>
+            i === matchIdx ? { ...line, qty: line.qty + qtyAdd } : line
+          ),
+        };
+      }
+      const line = createOrderLine(pickProduct, current.delivery);
+      line.qty = qtyAdd;
+      line.price = priceNum;
+      return { ...current, items: [...current.items, line] };
+    });
+    setPickQty(1);
+  }
 
+  function removeLineItem(rowId: string) {
     setForm((current) => ({
       ...current,
-      type: productName,
-      price: product
-        ? current.delivery === "delivery"
-          ? product.deliveryPrice
-          : product.onsitePrice
-        : "",
+      items: current.items.filter((line) => line.rowId !== rowId),
     }));
   }
 
@@ -222,11 +273,13 @@ export default function StaffPage() {
     setForm((current) => ({
       ...current,
       delivery,
-      price: selectedProduct
-        ? delivery === "delivery"
-          ? selectedProduct.deliveryPrice
-          : selectedProduct.onsitePrice
-        : current.price,
+      items: current.items.map((line) => {
+        const product = products.find((item) => item.id === line.deskItemId);
+        return {
+          ...line,
+          price: product ? (delivery === "delivery" ? product.deliveryPrice : product.onsitePrice) : line.price,
+        };
+      }),
     }));
   }
 
@@ -235,6 +288,18 @@ export default function StaffPage() {
 
     if (Number(form.manualDisc) > 0 && !form.manualReason.trim()) {
       alert("กรุณาระบุเหตุผลลดเพิ่ม");
+      return;
+    }
+
+    if (lineItems.length === 0) {
+      alert("กรุณาเพิ่มสินค้าลงในออเดอร์อย่างน้อย 1 รายการ");
+      return;
+    }
+    const invalidLine = lineItems.find(
+      (line) => !line.deskItemId || Number(line.qty || 0) <= 0 || Number(line.price) < 0 || line.price === ""
+    );
+    if (invalidLine) {
+      alert("กรุณาแก้รายการในออเดอร์ให้ครบ (จำนวนและราคา)");
       return;
     }
 
@@ -263,9 +328,12 @@ export default function StaffPage() {
     try {
       await api.createSale({
         date: form.date,
-        type: form.type,
-        qty: Number(form.qty),
-        price: Number(form.price),
+        items: lineItems.map((line) => ({
+          deskItemId: line.deskItemId,
+          type: line.product?.name || "",
+          qty: Number(line.qty),
+          price: Number(line.price),
+        })),
         pay: form.pay,
         discount: Number(form.discount),
         manualDisc: Number(form.manualDisc),
@@ -282,6 +350,8 @@ export default function StaffPage() {
         promoId: form.promoId || null
       });
       setForm(initialForm(today));
+      setPickDeskItemId(products[0]?.id ?? "");
+      setPickQty(1);
       await loadPage();
     } catch (error) {
       console.error("Failed to create sale:", error);
@@ -457,24 +527,137 @@ export default function StaffPage() {
             <label>วันที่ขาย</label>
             <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
           </div>
-          <div className="fg">
-            <label>ประเภทสินค้า</label>
-            <select value={form.type} onChange={(e) => handleProductChange(e.target.value)} required>
-              <option value="">-- เลือกประเภท --</option>
-              {products.map((product) => <option key={product.id} value={product.name}>{product.name}</option>)}
-            </select>
+        </div>
+
+        <div className="staff-order-picker">
+          <h4 className="h-with-icon" style={{ fontSize: 15, marginBottom: 12 }}>
+            <Package size={18} strokeWidth={2} aria-hidden />
+            เลือกสินค้าแล้วกดเพิ่มลงออเดอร์
+          </h4>
+          <div className="frow">
+            <div className="fg" style={{ flex: 2 }}>
+              <label>ประเภทโต๊ะ</label>
+              <select
+                value={pickDeskItemId}
+                onChange={(e) => setPickDeskItemId(e.target.value)}
+                disabled={products.length === 0}
+              >
+                <option value="">-- เลือกประเภท --</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="fg">
+              <label>จำนวน (ชุด)</label>
+              <input
+                type="number"
+                min={1}
+                value={pickQty}
+                onChange={(e) => setPickQty(Number(e.target.value) || 1)}
+                disabled={products.length === 0}
+              />
+            </div>
+            <div className="fg">
+              <label>ราคาต่อชุด (บาท)</label>
+              <input
+                type="number"
+                min={0}
+                value={pickPrice}
+                onChange={(e) => setPickPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                disabled={products.length === 0 || !pickProduct}
+              />
+            </div>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              className="sale-action-btn sale-action-btn--prominent"
+              disabled={!pickDeskItemId || !pickProduct || pickPrice === "" || products.length === 0}
+              onClick={addPickerToOrder}
+            >
+              <PlusCircle size={16} strokeWidth={2} aria-hidden />
+              เพิ่มลงในออเดอร์
+            </button>
           </div>
         </div>
 
-        <div className="frow">
-          <div className="fg">
-            <label>จำนวน (ชุด)</label>
-            <input type="number" min="1" value={form.qty} onChange={(e) => setForm({ ...form, qty: Number(e.target.value) || 1 })} required />
-          </div>
-          <div className="fg">
-            <label>ราคาขาย (บาท)</label>
-            <input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value === "" ? "" : Number(e.target.value) })} required />
-          </div>
+        <div className="staff-order-cart">
+          <h4 className="h-with-icon" style={{ fontSize: 14, marginBottom: 10 }}>
+            <ClipboardList size={16} strokeWidth={2} aria-hidden />
+            รายการในออเดอร์ ({form.items.length})
+          </h4>
+          {form.items.length === 0 ? (
+            <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>
+              ยังไม่มีสินค้า — เลือกโต๊ะด้านบนแล้วกด “เพิ่มลงในออเดอร์”
+            </p>
+          ) : (
+            <div className="staff-order-cart__grid-scroll">
+              <div className="staff-order-cart__head">
+                <span>สินค้า</span>
+                <span className="staff-order-cart__head-num">จำนวน</span>
+                <span className="staff-order-cart__head-num">ราคา/ชุด</span>
+                <span className="staff-order-cart__head-num">รวม</span>
+                <span className="staff-order-cart__head-action" aria-hidden="true" />
+              </div>
+              <ul className="staff-order-cart__list">
+                {lineItems.map((line, index) => (
+                  <li
+                    key={line.rowId}
+                    className={`staff-order-cart__row${index < lineItems.length - 1 ? " staff-order-cart__row--sep" : ""}`}
+                  >
+                    <div
+                      className="staff-order-cart__row-name"
+                      title={line.product?.name || undefined}
+                    >
+                      <span className="staff-order-cart__name-txt">{line.product?.name || "—"}</span>
+                      <span className="staff-order-cart__name-idx">#{index + 1}</span>
+                    </div>
+                    <div className="staff-order-cart__row-qty">
+                      <span className="staff-order-cart__field-label">จำนวน (ชุด)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        readOnly
+                        tabIndex={-1}
+                        className="staff-order-cart__input staff-order-cart__input--locked"
+                        aria-label={`จำนวน ${line.product?.name || "สินค้า"}`}
+                        value={line.qty}
+                      />
+                    </div>
+                    <div className="staff-order-cart__row-price">
+                      <span className="staff-order-cart__field-label">ราคา/ชุด (บาท)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        readOnly
+                        tabIndex={-1}
+                        className="staff-order-cart__input staff-order-cart__input--locked"
+                        aria-label={`ราคาต่อชุด ${line.product?.name || "สินค้า"}`}
+                        value={line.price}
+                      />
+                    </div>
+                    <div className="staff-order-cart__row-total">
+                      <span className="staff-order-cart__total-label">รวม</span>
+                      <span className="staff-order-cart__total-val">{formatMoney(line.lineBaseTotal)}</span>
+                    </div>
+                    <div className="staff-order-cart__row-remove">
+                      <button
+                        type="button"
+                        className="sale-action-btn staff-order-cart__remove-btn"
+                        onClick={() => removeLineItem(line.rowId)}
+                        aria-label="ลบรายการ"
+                      >
+                        <X size={14} strokeWidth={2} aria-hidden />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <div className="frow">
@@ -614,9 +797,30 @@ export default function StaffPage() {
             ยอดรวม
           </h3>
           <div className="crow">
-            <div className="ctxt">ราคาสินค้าสุทธิ</div>
-            <div className="crow-r">{formatMoney(unitNet * Number(form.qty || 1))}</div>
+            <div className="ctxt">ราคาสินค้ารวม</div>
+            <div className="crow-r">{formatMoney(subtotal)}</div>
           </div>
+          {Number(form.discount || 0) > 0 ? (
+            <div className="crow">
+              <div className="ctxt">ส่วนลดโปรโมชั่น</div>
+              <div className="crow-r">- {formatMoney(Number(form.discount || 0))}</div>
+            </div>
+          ) : null}
+          {Number(form.manualDisc || 0) > 0 ? (
+            <div className="crow">
+              <div className="ctxt">ลดเพิ่มโดยแอดมิน</div>
+              <div className="crow-r">- {formatMoney(Number(form.manualDisc || 0))}</div>
+            </div>
+          ) : null}
+          {lineItems.length > 0 ? (
+            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
+              {lineItems.map((line) => (
+                <div key={line.rowId}>
+                  {line.product?.name || "—"} x {line.qty} = {formatMoney(line.lineBaseTotal)}
+                </div>
+              ))}
+            </div>
+          ) : null}
           {form.delivery === "delivery" && (
             <div className="crow">
               <div className="ctxt">ค่าจัดส่ง</div>
@@ -629,9 +833,16 @@ export default function StaffPage() {
           </div>
         </div>
 
-        <button className="btnok" type="submit" disabled={!form.type || !form.price}>
+        <button
+          className="btnok"
+          type="submit"
+          disabled={
+            lineItems.length === 0 ||
+            lineItems.some((line) => !line.deskItemId || line.price === "" || Number(line.qty || 0) <= 0)
+          }
+        >
           <Save size={18} strokeWidth={2} aria-hidden />
-          บันทึกการขาย
+          บันทึกออเดอร์
         </button>
       </form>
 
@@ -730,6 +941,15 @@ export default function StaffPage() {
                       {sale.type} × {sale.qty} ชุด
                     </span>
                   </div>
+                  {sale.items && sale.items.length > 1 ? (
+                    <div style={{ fontSize: 12, color: "#475569" }}>
+                      {sale.items.map((item) => (
+                        <div key={item.id}>
+                          {item.type} x {item.qty} = {formatMoney(item.grandTotal)}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="staff-sale-badges">
                     <span className={`bdg with-icon-sm ${sale.delivery === "delivery" ? "del" : "pick"}`}>
                       {sale.delivery === "delivery" ? (
