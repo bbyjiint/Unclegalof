@@ -449,43 +449,69 @@ router.post(
       const month = saleDate.getUTCMonth() + 1;
       const monthStart = new Date(Date.UTC(year, month - 1, 1));
       const monthEnd = new Date(Date.UTC(year, month, 1));
+      const resolvedLines = [];
+      for (const line of linesInput) {
+        const deskItem = await resolveDeskItemForLine(prisma, line);
+        if (!deskItem) {
+          const productLabel = line.type || line.deskItemId || "unknown";
+          const error = new Error(`Desk item "${productLabel}" not found. Please create it first in catalog.`);
+          error.statusCode = 404;
+          throw error;
+        }
+        resolvedLines.push({
+          deskItem,
+          qty: Number(line.qty || 1),
+          price: Number(line.price || 0),
+          baseAmount: Number(line.price || 0) * Number(line.qty || 1),
+        });
+      }
+
+      const subtotal = resolvedLines.reduce((sum, line) => sum + line.baseAmount, 0);
+      const promoShares = allocateIntegerTotal(payload.discount || 0, resolvedLines.map((line) => line.baseAmount));
+      const manualShares = allocateIntegerTotal(payload.manualDisc || 0, resolvedLines.map((line) => line.baseAmount));
+      const feeShares = allocateIntegerTotal(payload.wFee || 0, resolvedLines.map((line) => line.baseAmount));
+
+      let priorUnits = 0;
+      if (req.role === UserRole.SALES) {
+        const priorAgg = await prisma.saleRecord.aggregate({
+          where: {
+            createdByUserId: req.user.id,
+            saleDate: { gte: monthStart, lt: monthEnd },
+          },
+          _sum: { quantity: true },
+        });
+        priorUnits = priorAgg._sum.quantity ?? 0;
+      }
+
+      const sequenceNext = await getNextLogicalOrderSequence(prisma, monthStart, monthEnd);
+      const publicOrderNumber = `SO-${year}${String(month).padStart(2, "0")}-${String(sequenceNext).padStart(4, "0")}`;
+
+      const avgCostByDeskItemId = new Map();
+      const uniqueDeskItemIds = [...new Set(resolvedLines.map((line) => line.deskItem.id))];
+      for (const deskItemId of uniqueDeskItemIds) {
+        const avgRec = await getAverageRecordedCost(prisma, deskItemId);
+        avgCostByDeskItemId.set(deskItemId, avgRec?.avgUnitCost ?? 0);
+      }
+
+      const sourceLots = await prisma.inventoryLot.findMany({
+        where: {
+          deskItemId: { in: uniqueDeskItemIds },
+          remainingQty: { gt: 0 },
+        },
+        orderBy: [{ deskItemId: "asc" }, { createdAt: "asc" }],
+      });
+
+      const sourceLotsByDeskItemId = new Map();
+      for (const lot of sourceLots) {
+        const rows = sourceLotsByDeskItemId.get(lot.deskItemId) || [];
+        rows.push({
+          id: lot.id,
+          remainingQty: lot.remainingQty,
+        });
+        sourceLotsByDeskItemId.set(lot.deskItemId, rows);
+      }
+
       const savedRows = await prisma.$transaction(async (tx) => {
-        const resolvedLines = [];
-        for (const line of linesInput) {
-          const deskItem = await resolveDeskItemForLine(tx, line);
-          if (!deskItem) {
-            const productLabel = line.type || line.deskItemId || "unknown";
-            const error = new Error(`Desk item "${productLabel}" not found. Please create it first in catalog.`);
-            error.statusCode = 404;
-            throw error;
-          }
-          resolvedLines.push({
-            deskItem,
-            qty: Number(line.qty || 1),
-            price: Number(line.price || 0),
-            baseAmount: Number(line.price || 0) * Number(line.qty || 1),
-          });
-        }
-
-        const subtotal = resolvedLines.reduce((sum, line) => sum + line.baseAmount, 0);
-        const promoShares = allocateIntegerTotal(payload.discount || 0, resolvedLines.map((line) => line.baseAmount));
-        const manualShares = allocateIntegerTotal(payload.manualDisc || 0, resolvedLines.map((line) => line.baseAmount));
-        const feeShares = allocateIntegerTotal(payload.wFee || 0, resolvedLines.map((line) => line.baseAmount));
-
-        let priorUnits = 0;
-        if (req.role === UserRole.SALES) {
-          const priorAgg = await tx.saleRecord.aggregate({
-            where: {
-              createdByUserId: req.user.id,
-              saleDate: { gte: monthStart, lt: monthEnd },
-            },
-            _sum: { quantity: true },
-          });
-          priorUnits = priorAgg._sum.quantity ?? 0;
-        }
-
-        const sequenceNext = await getNextLogicalOrderSequence(tx, monthStart, monthEnd);
-        const publicOrderNumber = `SO-${year}${String(month).padStart(2, "0")}-${String(sequenceNext).padStart(4, "0")}`;
 
         const salesOrder = await tx.salesOrder.create({
           data: {
@@ -520,8 +546,7 @@ router.post(
           const workerFee = feeShares[index] || 0;
           const lineSubtotal = line.baseAmount;
           const lineAmount = Math.max(0, lineSubtotal - promoDiscount - manualDiscount + workerFee);
-          const avgRec = await getAverageRecordedCost(tx, line.deskItem.id);
-          const avgUnitCostSnapshot = avgRec?.avgUnitCost ?? 0;
+          const avgUnitCostSnapshot = avgCostByDeskItemId.get(line.deskItem.id) ?? 0;
           const cogsTotal = avgUnitCostSnapshot * line.qty;
           const grossProfit = lineAmount - workerFee - cogsTotal;
           const lineNumber = index + 1;
@@ -575,15 +600,9 @@ router.post(
           });
 
           let remainingToConsume = line.qty;
-          const sourceLots = await tx.inventoryLot.findMany({
-            where: {
-              deskItemId: line.deskItem.id,
-              remainingQty: { gt: 0 },
-            },
-            orderBy: { createdAt: "asc" },
-          });
+          const sourceLotsForDeskItem = sourceLotsByDeskItemId.get(line.deskItem.id) || [];
 
-          for (const lot of sourceLots) {
+          for (const lot of sourceLotsForDeskItem) {
             if (remainingToConsume <= 0) break;
             const takeQty = Math.min(lot.remainingQty, remainingToConsume);
             if (takeQty <= 0) continue;
@@ -604,6 +623,7 @@ router.post(
               },
             });
 
+            lot.remainingQty -= takeQty;
             remainingToConsume -= takeQty;
           }
 
@@ -639,6 +659,9 @@ router.post(
         }
 
         return createdRows;
+      }, {
+        maxWait: 5000,
+        timeout: 15000,
       });
 
       const includeCost = req.role === UserRole.OWNER;
