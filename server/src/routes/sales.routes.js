@@ -695,6 +695,7 @@ router.post(
     try {
       const { saleIds, fileUrl, transferAmount, note } = req.body;
       const { saleRecords: sales, missingIds, logicalCount } = await expandLogicalSaleIds(prisma, saleIds);
+      const expandedSaleRecordIds = sales.map((sale) => sale.id);
 
       if (missingIds.length > 0) {
         return res.status(404).json({ error: "Some sales were not found" });
@@ -755,7 +756,7 @@ router.post(
         });
 
         await tx.saleRecord.updateMany({
-          where: { id: { in: uniqueSaleIds } },
+          where: { id: { in: expandedSaleRecordIds } },
           data: {
             paymentBatchId: createdBatch.id,
             paymentSlipImage: fileUrl,
