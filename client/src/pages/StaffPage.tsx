@@ -65,6 +65,51 @@ type StaffFormLine = {
   price: number | "";
 };
 
+type PendingSalePhoto = {
+  file: File;
+  url: string;
+};
+
+type LightboxState = {
+  images: string[];
+  index: number;
+};
+
+const MAX_SALE_PHOTOS = 4;
+const SALE_PHOTO_BLOCK_START = "[SALE_PHOTOS]";
+const SALE_PHOTO_BLOCK_END = "[/SALE_PHOTOS]";
+
+function splitSaleNoteAndPhotos(rawNote?: string | null): { note: string; photos: string[] } {
+  const source = String(rawNote ?? "");
+  const start = source.indexOf(SALE_PHOTO_BLOCK_START);
+  const end = source.indexOf(SALE_PHOTO_BLOCK_END);
+
+  if (start === -1 || end === -1 || end < start) {
+    return { note: source.trim(), photos: [] };
+  }
+
+  const visibleNote = `${source.slice(0, start)}${source.slice(end + SALE_PHOTO_BLOCK_END.length)}`.trim();
+  const photoBlock = source
+    .slice(start + SALE_PHOTO_BLOCK_START.length, end)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return { note: visibleNote, photos: photoBlock };
+}
+
+function buildSaleNotePayload(note: string, photos: string[]): string {
+  const cleanNote = note.trim();
+  const cleanPhotos = photos.map((photo) => photo.trim()).filter(Boolean);
+
+  if (cleanPhotos.length === 0) {
+    return cleanNote;
+  }
+
+  const parts = [cleanNote, SALE_PHOTO_BLOCK_START, ...cleanPhotos, SALE_PHOTO_BLOCK_END].filter(Boolean);
+  return parts.join("\n");
+}
+
 function makeRowId(): string {
   return globalThis.crypto?.randomUUID?.() || `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -98,6 +143,7 @@ export default function StaffPage() {
   const { user } = useAuth();
   const today = new Date().toISOString().slice(0, 10);
   const paymentSlipInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const salePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -107,14 +153,18 @@ export default function StaffPage() {
   const [uploadingSaleId, setUploadingSaleId] = useState<string | null>(null);
   const [batchUploading, setBatchUploading] = useState<boolean>(false);
   const [selectedBatchSaleIds, setSelectedBatchSaleIds] = useState<string[]>([]);
-  const [slipPreviewSrc, setSlipPreviewSrc] = useState<string | null>(null);
-  const closeSlipPreview = useCallback(() => setSlipPreviewSrc(null), []);
+  const [lightboxState, setLightboxState] = useState<LightboxState | null>(null);
+  const closeSlipPreview = useCallback(() => setLightboxState(null), []);
   const batchSlipInputRef = useRef<HTMLInputElement | null>(null);
+  const [newSalePhotos, setNewSalePhotos] = useState<PendingSalePhoto[]>([]);
+  const newSalePhotosRef = useRef<PendingSalePhoto[]>([]);
+  newSalePhotosRef.current = newSalePhotos;
   const [form, setForm] = useState<StaffFormState>(initialForm(today));
   /** Picker: choose one desk type, then “add to order”. */
   const [pickDeskItemId, setPickDeskItemId] = useState<string>("");
   const [pickQty, setPickQty] = useState<number>(1);
   const [pickPrice, setPickPrice] = useState<number | "">("");
+  const hasPendingSalePhotos = newSalePhotos.length > 0;
 
   async function loadPage(): Promise<void> {
     setLoading(true);
@@ -210,6 +260,12 @@ export default function StaffPage() {
     );
   }, [batchEligibleSales]);
 
+  useEffect(() => {
+    return () => {
+      newSalePhotosRef.current.forEach((photo) => URL.revokeObjectURL(photo.url));
+    };
+  }, []);
+
   function getPayStatusLabel(status: PayStatus): string {
     if (status === "paid") {
       return "ชำระแล้ว";
@@ -283,6 +339,52 @@ export default function StaffPage() {
     }));
   }
 
+  function openSalePhotoPicker(): void {
+    salePhotoInputRef.current?.click();
+  }
+
+  function handleSalePhotosSelected(event: ChangeEvent<HTMLInputElement>): void {
+    const picked = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/"));
+    event.target.value = "";
+    if (picked.length === 0) {
+      return;
+    }
+
+    setNewSalePhotos((current) => {
+      const remaining = Math.max(0, MAX_SALE_PHOTOS - current.length);
+      if (remaining <= 0) {
+        alert(`แนบได้สูงสุด ${MAX_SALE_PHOTOS} รูปต่อออเดอร์`);
+        return current;
+      }
+      const nextPhotos = picked.slice(0, remaining).map((file) => ({
+        file,
+        url: URL.createObjectURL(file),
+      }));
+      return [...current, ...nextPhotos];
+    });
+  }
+
+  function removeSalePhoto(index: number): void {
+    setNewSalePhotos((current) => {
+      const target = current[index];
+      if (target) {
+        URL.revokeObjectURL(target.url);
+      }
+      return current.filter((_, idx) => idx !== index);
+    });
+  }
+
+  function openImageLightbox(images: string[], index = 0): void {
+    const validImages = images.filter(Boolean);
+    if (validImages.length === 0) {
+      return;
+    }
+    setLightboxState({
+      images: validImages,
+      index: Math.max(0, Math.min(index, validImages.length - 1)),
+    });
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
 
@@ -326,6 +428,11 @@ export default function StaffPage() {
     }
 
     try {
+      const photoUrls =
+        newSalePhotos.length > 0
+          ? await Promise.all(newSalePhotos.map((photo) => uploadFileToR2(photo.file, "REPAIR_IMAGE")))
+          : [];
+
       await api.createSale({
         date: form.date,
         items: lineItems.map((line) => ({
@@ -344,11 +451,13 @@ export default function StaffPage() {
         addr: form.addr,
         customerPhone: customerPhonePayload,
         deliveryAddress: form.deliveryAddress,
-        note: form.note,
+        note: buildSaleNotePayload(form.note, photoUrls),
         wFee: workerFee,
         wType: form.delivery === "delivery" ? "po" : "ice",
         promoId: form.promoId || null
       });
+      newSalePhotos.forEach((photo) => URL.revokeObjectURL(photo.url));
+      setNewSalePhotos([]);
       setForm(initialForm(today));
       setPickDeskItemId(products[0]?.id ?? "");
       setPickQty(1);
@@ -582,6 +691,75 @@ export default function StaffPage() {
               เพิ่มลงในออเดอร์
             </button>
           </div>
+          <div style={{ marginTop: 14 }}>
+            <label style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>Add photo</label>
+            <input
+              ref={salePhotoInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={handleSalePhotosSelected}
+            />
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <button
+                type="button"
+                className="sale-action-btn"
+                onClick={openSalePhotoPicker}
+                disabled={newSalePhotos.length >= MAX_SALE_PHOTOS}
+              >
+                <ImagePlus size={16} strokeWidth={2} aria-hidden />
+                {newSalePhotos.length > 0 ? "เพิ่มรูป" : "เลือกรูป"}
+              </button>
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                แนบได้สูงสุด {MAX_SALE_PHOTOS} รูป สำหรับรูปสินค้า/หน้างาน
+              </span>
+            </div>
+            {newSalePhotos.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+                {newSalePhotos.map((photo, index) => (
+                  <div
+                    key={`${photo.file.name}-${index}`}
+                    style={{
+                      width: 92,
+                      border: "1px solid #dbe2ea",
+                      borderRadius: 12,
+                      overflow: "hidden",
+                      background: "#fff",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openImageLightbox(newSalePhotos.map((item) => item.url), index)}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: 0,
+                        border: 0,
+                        background: "transparent",
+                        cursor: "pointer",
+                      }}
+                      aria-label={`ดูรูปที่ ${index + 1}`}
+                    >
+                      <img
+                        src={photo.url}
+                        alt={`รูปออเดอร์ ${index + 1}`}
+                        style={{ width: "100%", height: 92, objectFit: "cover", display: "block" }}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      className="sale-slip-link sale-slip-link--staff"
+                      style={{ width: "100%", borderRadius: 0, justifyContent: "center" }}
+                      onClick={() => removeSalePhoto(index)}
+                    >
+                      ลบรูป
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="staff-order-cart">
@@ -612,8 +790,19 @@ export default function StaffPage() {
                       className="staff-order-cart__row-name"
                       title={line.product?.name || undefined}
                     >
-                      <span className="staff-order-cart__name-txt">{line.product?.name || "—"}</span>
-                      <span className="staff-order-cart__name-idx">#{index + 1}</span>
+                      <div className="staff-order-cart__name-main">
+                        <span className="staff-order-cart__name-txt">{line.product?.name || "—"}</span>
+                        <span className="staff-order-cart__name-idx">#{index + 1}</span>
+                      </div>
+                      {hasPendingSalePhotos ? (
+                        <button
+                          type="button"
+                          className="sale-slip-link sale-slip-link--staff staff-order-cart__photo-link"
+                          onClick={() => openImageLightbox(newSalePhotos.map((photo) => photo.url), 0)}
+                        >
+                          ดูรูปแนบ ({newSalePhotos.length})
+                        </button>
+                      ) : null}
                     </div>
                     <div className="staff-order-cart__row-qty">
                       <span className="staff-order-cart__field-label">จำนวน (ชุด)</span>
@@ -903,6 +1092,10 @@ export default function StaffPage() {
           sales.map((sale) => (
             <div key={sale.id} className={`sitem ${sale.delivery}`}>
               <div className="sitem-l">
+                {(() => {
+                  const salePhotos = splitSaleNoteAndPhotos(sale.note).photos;
+                  return (
+                    <>
                 <div className="soid">{sale.orderNumber}</div>
                 {sale.payStatus !== "paid" && !sale.paymentBatchId ? (
                   <label
@@ -1003,6 +1196,20 @@ export default function StaffPage() {
                     ? ` · ${new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
                     : null}
                 </div>
+                {salePhotos.length > 0 ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                    {salePhotos.map((photoUrl, index) => (
+                      <button
+                        key={`${sale.id}-photo-${index}`}
+                        type="button"
+                        className="sale-slip-link sale-slip-link--staff"
+                        onClick={() => openImageLightbox(salePhotos, index)}
+                      >
+                        ดูรูป {index + 1}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 {sale.paymentBatchNumber ? (
                   <div style={{ marginTop: 6 }}>
                     <span
@@ -1023,6 +1230,9 @@ export default function StaffPage() {
                     </span>
                   </div>
                 ) : null}
+                    </>
+                  );
+                })()}
               </div>
               <div className="sitem-right">
                 <div className="sprice">{formatMoney(sale.grandTotal)}</div>
@@ -1063,7 +1273,7 @@ export default function StaffPage() {
                       <button
                         type="button"
                         className="sale-slip-link sale-slip-link--staff"
-                        onClick={() => setSlipPreviewSrc(sale.paymentSlipImage!)}
+                        onClick={() => openImageLightbox([sale.paymentSlipImage!], 0)}
                       >
                         ดูสลิป
                       </button>
@@ -1089,7 +1299,11 @@ export default function StaffPage() {
         )}
       </section>
 
-      <PaymentSlipLightbox imageSrc={slipPreviewSrc} onClose={closeSlipPreview} />
+      <PaymentSlipLightbox
+        imageSources={lightboxState?.images}
+        initialIndex={lightboxState?.index ?? 0}
+        onClose={closeSlipPreview}
+      />
     </main>
   );
 }

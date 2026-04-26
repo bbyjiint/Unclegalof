@@ -1,26 +1,59 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Props = {
-  imageSrc: string | null;
+  imageSrc?: string | null;
+  imageSources?: string[];
+  initialIndex?: number;
   onClose: () => void;
 };
 
-export function PaymentSlipLightbox({ imageSrc, onClose }: Props) {
+export function PaymentSlipLightbox({ imageSrc = null, imageSources, initialIndex = 0, onClose }: Props) {
+  const images = useMemo(() => {
+    const list = imageSources?.filter(Boolean) ?? [];
+    return list.length > 0 ? list : imageSrc ? [imageSrc] : [];
+  }, [imageSources, imageSrc]);
+  const [activeIndex, setActiveIndex] = useState<number>(initialIndex);
+
   useEffect(() => {
-    if (!imageSrc) {
+    setActiveIndex(Math.max(0, Math.min(initialIndex, Math.max(0, images.length - 1))));
+  }, [images, initialIndex]);
+
+  useEffect(() => {
+    if (images.length === 0) {
       return;
     }
     function onKeyDown(e: globalThis.KeyboardEvent): void {
       if (e.key === "Escape") {
         onClose();
+        return;
+      }
+      if (images.length <= 1) {
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        setActiveIndex((current) => (current + 1) % images.length);
+      }
+      if (e.key === "ArrowLeft") {
+        setActiveIndex((current) => (current - 1 + images.length) % images.length);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [imageSrc, onClose]);
+  }, [images, onClose]);
 
-  if (!imageSrc) {
+  if (images.length === 0) {
     return null;
+  }
+
+  const currentImageSrc = images[activeIndex] || images[0];
+  const hasMultiple = images.length > 1;
+
+  function showPrevious(): void {
+    setActiveIndex((current) => (current - 1 + images.length) % images.length);
+  }
+
+  function showNext(): void {
+    setActiveIndex((current) => (current + 1) % images.length);
   }
 
   return (
@@ -56,9 +89,57 @@ export function PaymentSlipLightbox({ imageSrc, onClose }: Props) {
           e.stopPropagation();
         }}
       >
+        {hasMultiple ? (
+          <>
+            <button
+              type="button"
+              aria-label="รูปก่อนหน้า"
+              onClick={showPrevious}
+              style={{
+                position: "absolute",
+                left: 16,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 40,
+                height: 40,
+                borderRadius: 9999,
+                border: "none",
+                background: "rgba(255,255,255,0.18)",
+                color: "#fff",
+                fontSize: 24,
+                cursor: "pointer",
+                zIndex: 1,
+              }}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              aria-label="รูปถัดไป"
+              onClick={showNext}
+              style={{
+                position: "absolute",
+                right: 16,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 40,
+                height: 40,
+                borderRadius: 9999,
+                border: "none",
+                background: "rgba(255,255,255,0.18)",
+                color: "#fff",
+                fontSize: 24,
+                cursor: "pointer",
+                zIndex: 1,
+              }}
+            >
+              ›
+            </button>
+          </>
+        ) : null}
         <img
-          src={imageSrc}
-          alt="สลิปโอนเงิน"
+          src={currentImageSrc}
+          alt={hasMultiple ? `รูปแนบ ${activeIndex + 1}` : "สลิปโอนเงิน"}
           style={{
             display: "block",
             maxWidth: "100%",
@@ -69,6 +150,11 @@ export function PaymentSlipLightbox({ imageSrc, onClose }: Props) {
             borderRadius: 8
           }}
         />
+        {hasMultiple ? (
+          <div style={{ marginTop: 10, textAlign: "center", color: "#fff", fontSize: 13 }}>
+            รูป {activeIndex + 1} / {images.length}
+          </div>
+        ) : null}
         <button type="button" className="btnok" style={{ marginTop: 10, width: "100%" }} onClick={onClose}>
           ปิด
         </button>
