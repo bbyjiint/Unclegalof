@@ -51,6 +51,7 @@ enum PipelinePriority {
 enum StoredFilePurpose {
   PAYMENT_SLIP
   REPAIR_IMAGE
+  SALE_IMAGE
 }
 
 model User {
@@ -140,6 +141,7 @@ model SalesOrder {
   customerPhone        String?           @db.Text
   deliveryAddress      String?           @db.Text
   remarks              String?
+  deskPhotos           Json              @default("[]")
   paymentSlipImage     String?           @db.Text
   slipViewedAt         DateTime?
   paidAt               DateTime?
@@ -169,6 +171,7 @@ model SalesOrderLine {
   promoDiscount       Int          @default(0)
   manualDiscount      Int          @default(0)
   amount              Int
+  deskPhotos          Json         @default("[]")
   avgUnitCostSnapshot Int          @default(0)
   cogsTotal           Int          @default(0)
   grossProfit         Int          @default(0)
@@ -213,6 +216,7 @@ model SaleRecord {
   customerPhone        String?                @db.Text
   deliveryAddress      String?                @db.Text
   remarks              String?
+  deskPhotos           Json                   @default("[]")
   paymentSlipImage     String?                @db.Text
   slipViewedAt         DateTime?
   paidAt               DateTime?

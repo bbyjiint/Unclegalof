@@ -38,6 +38,8 @@ router.get("/", authenticate, requireRole(UserRole.OWNER, UserRole.REPAIRS), asy
       customerPhone: sale.customerPhone ?? null,
       deliveryAddress: sale.deliveryAddress ?? null,
       productName: sale.type,
+      deskPhotos: Array.isArray(sale.deskPhotos) ? sale.deskPhotos : [],
+      items: Array.isArray(sale.items) ? sale.items : [],
     }));
 
     res.json({ orders });

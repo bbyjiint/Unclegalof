@@ -3,7 +3,7 @@ export type PayStatus = "paid" | "pending" | "deposit";
 export type RepairStatus = "open" | "inprogress" | "done";
 export type RepairKind = "repair" | "claim";
 export type UserRole = "OWNER" | "SALES" | "REPAIRS";
-export type StoredFilePurpose = "PAYMENT_SLIP" | "REPAIR_IMAGE";
+export type StoredFilePurpose = "PAYMENT_SLIP" | "REPAIR_IMAGE" | "SALE_IMAGE";
 
 export interface AuthUser {
   id: string;
@@ -64,6 +64,7 @@ export interface Sale {
   /** ออเดอร์จัดส่ง: เวลาที่กดยืนยันจัดส่งสำเร็จ (ISO) */
   deliveryCompletedAt?: string | null;
   deliveryAddress?: string | null;
+  deskPhotos?: string[];
   paymentSlipImage?: string | null;
   slipViewedAt?: string | null;
   paidAt?: string | null;
@@ -82,6 +83,7 @@ export interface Sale {
     qty: number;
     price: number;
     grandTotal: number;
+    deskPhotos?: string[];
   }>;
   /** OWNER-only: mean of recorded purchase ต้นทุน/หน่วย at sale time */
   avgUnitCost?: number;
@@ -119,6 +121,16 @@ export interface DeliveryOrderRow {
   customerPhone: string | null;
   deliveryAddress: string | null;
   productName: string;
+  deskPhotos?: string[];
+  items?: Array<{
+    id: string;
+    deskItemId: string;
+    type: string;
+    qty: number;
+    price: number;
+    grandTotal: number;
+    deskPhotos?: string[];
+  }>;
 }
 
 export interface RepairItem {

@@ -15,7 +15,7 @@ import {
   MONTHLY_COMMISSION_PER_UNIT_BAHT,
   yearlyBonusProgress,
 } from "../lib/salesCommission.js";
-import { deleteUploadedFileFromR2 } from "../lib/r2Cleanup.js";
+import { deleteUploadedFileFromR2, deleteUploadedFilesFromR2 } from "../lib/r2Cleanup.js";
 import { getDeliveryRangeFromKm } from "../lib/deliveryZones.js";
 import {
   expandLogicalSaleIds,
@@ -32,6 +32,10 @@ const saleLineSchema = z
     type: z.string().optional().default(""),
     qty: z.number().int().positive(),
     price: z.number().nonnegative(),
+    deskPhotos: z.array(z.string().url()).max(8).optional(),
+    salePhotos: z.array(z.string().url()).max(8).optional(),
+    images: z.array(z.string().url()).max(8).optional(),
+    photoUrls: z.array(z.string().url()).max(8).optional(),
   })
   .superRefine((data, ctx) => {
     if (!data.deskItemId && !String(data.type ?? "").trim()) {
@@ -42,6 +46,8 @@ const saleLineSchema = z
       });
     }
   });
+
+const salePhotoUrlSchema = z.string().url();
 
 const frontendSaleSchema = z
   .object({
@@ -64,6 +70,10 @@ const frontendSaleSchema = z
     wFee: z.number().nonnegative().optional().default(0),
     wType: z.enum(["po", "ice"]),
     promoId: z.string().uuid().nullable().optional(),
+    deskPhotos: z.array(salePhotoUrlSchema).max(8).optional(),
+    salePhotos: z.array(salePhotoUrlSchema).max(8).optional(),
+    images: z.array(salePhotoUrlSchema).max(8).optional(),
+    photoUrls: z.array(salePhotoUrlSchema).max(8).optional(),
   })
   .superRefine((data, ctx) => {
     const hasItems = Array.isArray(data.items) && data.items.length > 0;
@@ -161,6 +171,9 @@ const updateSaleStatusSchema = z.object({
   status: z.enum(["paid", "pending", "deposit"]),
 });
 
+const SALE_PHOTO_BLOCK_START = "[SALE_PHOTOS]";
+const SALE_PHOTO_BLOCK_END = "[/SALE_PHOTOS]";
+
 /** OWNER sees all sales; SALES only their own rows (createdByUserId). */
 function assertSalesStaffOwnsRecordOrOwner(req, sale, res) {
   if (req.role === UserRole.OWNER) {
@@ -182,6 +195,50 @@ function normalizedSaleAmountForBatch(sale) {
   return Math.max(0, Number(sale.amount || 0) - deduction);
 }
 
+function normalizePhotoUrls(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((url) => typeof url === "string").map((url) => url.trim()).filter(Boolean);
+}
+
+function photoUrlsFromNote(rawNote) {
+  const source = String(rawNote ?? "");
+  const start = source.indexOf(SALE_PHOTO_BLOCK_START);
+  const end = source.indexOf(SALE_PHOTO_BLOCK_END);
+  if (start === -1 || end === -1 || end < start) {
+    return [];
+  }
+  return source
+    .slice(start + SALE_PHOTO_BLOCK_START.length, end)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function payloadDeskPhotos(payload) {
+  return Array.from(
+    new Set([
+      ...normalizePhotoUrls(payload.deskPhotos),
+      ...normalizePhotoUrls(payload.salePhotos),
+      ...normalizePhotoUrls(payload.images),
+      ...normalizePhotoUrls(payload.photoUrls),
+      ...photoUrlsFromNote(payload.note),
+    ])
+  ).slice(0, 8);
+}
+
+function lineDeskPhotos(line) {
+  return Array.from(
+    new Set([
+      ...normalizePhotoUrls(line.deskPhotos),
+      ...normalizePhotoUrls(line.salePhotos),
+      ...normalizePhotoUrls(line.images),
+      ...normalizePhotoUrls(line.photoUrls),
+    ])
+  ).slice(0, 8);
+}
+
 function payloadLineItems(payload) {
   if (Array.isArray(payload.items) && payload.items.length > 0) {
     return payload.items.map((item) => ({
@@ -189,6 +246,7 @@ function payloadLineItems(payload) {
       type: String(item.type ?? "").trim(),
       qty: Number(item.qty || 1),
       price: Number(item.price || 0),
+      deskPhotos: lineDeskPhotos(item),
     }));
   }
 
@@ -198,6 +256,7 @@ function payloadLineItems(payload) {
       type: String(payload.type ?? "").trim(),
       qty: Number(payload.qty || 1),
       price: Number(payload.price || 0),
+      deskPhotos: payloadDeskPhotos(payload),
     },
   ];
 }
@@ -443,6 +502,7 @@ router.post(
       const companyOwnerId = await getCanonicalCompanyOwnerId(prisma);
       const linesInput = payloadLineItems(payload);
       const deliveryRange = payload.delivery === "delivery" && payload.km ? getDeliveryRangeFromKm(payload.km) : null;
+      const deskPhotos = payloadDeskPhotos(payload);
 
       const saleDate = new Date(payload.date);
       const year = saleDate.getUTCFullYear();
@@ -463,6 +523,7 @@ router.post(
           qty: Number(line.qty || 1),
           price: Number(line.price || 0),
           baseAmount: Number(line.price || 0) * Number(line.qty || 1),
+          deskPhotos: line.deskPhotos || [],
         });
       }
 
@@ -510,6 +571,7 @@ router.post(
         });
         sourceLotsByDeskItemId.set(lot.deskItemId, rows);
       }
+      const orderDeskPhotos = Array.from(new Set([...deskPhotos, ...resolvedLines.flatMap((line) => line.deskPhotos || [])]));
 
       const savedRows = await prisma.$transaction(async (tx) => {
 
@@ -533,6 +595,7 @@ router.post(
             customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
             deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
             remarks: payload.note || null,
+            deskPhotos: orderDeskPhotos,
             createdByUserId: req.user.id,
             paidAt: payload.pay === "paid" ? new Date() : null,
           },
@@ -561,6 +624,7 @@ router.post(
               promoDiscount,
               manualDiscount,
               amount: lineAmount,
+              deskPhotos: line.deskPhotos || [],
               avgUnitCostSnapshot,
               cogsTotal,
               grossProfit,
@@ -592,6 +656,7 @@ router.post(
               customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
               deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
               remarks: payload.note || null,
+              deskPhotos: line.deskPhotos || [],
               paidAt: payload.pay === "paid" ? new Date() : null,
               createdByUserId: req.user.id,
               salesOrderId: salesOrder.id,
@@ -1050,6 +1115,15 @@ router.delete(
       if (currentSlip) {
         await deleteUploadedFileFromR2(currentSlip);
       }
+      const deskPhotos = Array.from(
+        new Set([
+          ...normalizePhotoUrls(group.rows[0]?.salesOrder?.deskPhotos),
+          ...normalizePhotoUrls(group.representative.deskPhotos),
+          ...photoUrlsFromNote(group.rows[0]?.salesOrder?.remarks),
+          ...photoUrlsFromNote(group.representative.remarks),
+        ])
+      );
+      await deleteUploadedFilesFromR2(deskPhotos);
 
       if (group.salesOrderId) {
         await prisma.$transaction(async (tx) => {

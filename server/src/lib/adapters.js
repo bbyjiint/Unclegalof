@@ -15,6 +15,13 @@ function legacyIceFeeToDeduct(saleRecord) {
   return isLegacySelfPickupIceFee ? Number(saleRecord.workerFee || 0) : 0;
 }
 
+function normalizePhotoUrls(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((url) => typeof url === "string").map((url) => url.trim()).filter(Boolean);
+}
+
 /** Thai mobile: exactly 10 digits, leading 0 (e.g. 0812345678). Strips spaces/dashes. */
 export function normalizeCustomerPhoneThai10(raw) {
   const d = String(raw ?? "").replace(/\D/g, "");
@@ -52,6 +59,7 @@ export function saleRecordToSale(saleRecord, sequence = null, options = {}) {
     customerPhone: saleRecord.customerPhone || null,
     deliveryCompletedAt: saleRecord.deliveryCompletedAt?.toISOString() || null,
     deliveryAddress: saleRecord.deliveryAddress || null,
+    deskPhotos: normalizePhotoUrls(saleRecord.deskPhotos),
     paymentSlipImage: saleRecord.paymentSlipImage || null,
     slipViewedAt: saleRecord.slipViewedAt?.toISOString() || null,
     paidAt: saleRecord.paidAt?.toISOString() || null,

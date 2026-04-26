@@ -104,6 +104,7 @@ type CreateSaleLinePayload = {
   type?: string;
   qty: number;
   price: number;
+  deskPhotos?: string[];
 };
 
 type CreateSalePayload = {

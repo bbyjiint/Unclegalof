@@ -3,6 +3,7 @@ import { CheckCircle2, MapPin, MessageCircle, Phone, Truck, User } from "lucide-
 import { api } from "../lib/api";
 import { formatMoney } from "../data/constants";
 import type { DeliveryOrderRow } from "../types";
+import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 
 function formatSaleDate(iso: string): string {
   try {
@@ -41,6 +42,7 @@ export default function DeliveryOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [lineGroupNotice, setLineGroupNotice] = useState(false);
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const lineReminderOkRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -163,6 +165,49 @@ export default function DeliveryOrdersPage() {
                     <DeliveryAddressText text={o.deliveryAddress} />
                   </div>
                 </div>
+                {(o.items?.length ?? 0) > 0 ? (
+                  <div>
+                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--muted)", marginBottom: 6 }}>
+                      รูปโต๊ะ / รายการสินค้า
+                    </div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {o.items!.map((item) => {
+                        const photos = item.deskPhotos || [];
+                        return (
+                          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 14 }}>
+                              {item.type} x {item.qty}
+                            </span>
+                            {photos.length > 0 ? (
+                              <button
+                                type="button"
+                                className="sale-slip-link sale-slip-link--staff"
+                                onClick={() => setLightbox({ images: photos, index: 0 })}
+                              >
+                                ดูรูปโต๊ะ ({photos.length})
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: 12, color: "var(--muted)" }}>ไม่มีรูป</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (o.deskPhotos?.length ?? 0) > 0 ? (
+                  <div>
+                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--muted)", marginBottom: 6 }}>
+                      รูปโต๊ะ
+                    </div>
+                    <button
+                      type="button"
+                      className="sale-slip-link sale-slip-link--staff"
+                      onClick={() => setLightbox({ images: o.deskPhotos || [], index: 0 })}
+                    >
+                      ดูรูปโต๊ะ ({o.deskPhotos!.length})
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
                 <button
@@ -220,6 +265,11 @@ export default function DeliveryOrdersPage() {
           </div>
         </div>
       ) : null}
+      <PaymentSlipLightbox
+        imageSources={lightbox?.images}
+        initialIndex={lightbox?.index ?? 0}
+        onClose={() => setLightbox(null)}
+      />
     </main>
   );
 }

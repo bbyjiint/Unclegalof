@@ -18,6 +18,34 @@ function toIsoOrNull(value) {
   return value?.toISOString?.() || null;
 }
 
+const SALE_PHOTO_BLOCK_START = "[SALE_PHOTOS]";
+const SALE_PHOTO_BLOCK_END = "[/SALE_PHOTOS]";
+
+function normalizePhotoUrls(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((url) => typeof url === "string").map((url) => url.trim()).filter(Boolean);
+}
+
+function photoUrlsFromNote(rawNote) {
+  const source = String(rawNote ?? "");
+  const start = source.indexOf(SALE_PHOTO_BLOCK_START);
+  const end = source.indexOf(SALE_PHOTO_BLOCK_END);
+  if (start === -1 || end === -1 || end < start) {
+    return [];
+  }
+  return source
+    .slice(start + SALE_PHOTO_BLOCK_START.length, end)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function uniquePhotoUrls(...groups) {
+  return Array.from(new Set(groups.flatMap((group) => normalizePhotoUrls(group))));
+}
+
 function toLineItem(row) {
   return {
     id: row.id,
@@ -26,6 +54,7 @@ function toLineItem(row) {
     qty: row.quantity ?? 1,
     price: row.unitPrice ?? 0,
     grandTotal: normalizedLineGrandTotal(row),
+    deskPhotos: normalizePhotoUrls(row.deskPhotos),
   };
 }
 
@@ -73,6 +102,12 @@ export function saleGroupToFrontendSale(group, options = {}) {
       : rows.reduce((sum, row) => sum + normalizedLineGrandTotal(row), 0);
   const totalCogs = rows.reduce((sum, row) => sum + Number(row.cogsTotal || 0), 0);
   const totalGrossProfit = rows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0);
+  const deskPhotos = uniquePhotoUrls(
+    order?.deskPhotos,
+    ...rows.map((row) => row.deskPhotos),
+    photoUrlsFromNote(order?.remarks),
+    photoUrlsFromNote(first.remarks)
+  );
 
   const base = {
     id: first.id,
@@ -89,6 +124,7 @@ export function saleGroupToFrontendSale(group, options = {}) {
     customerPhone: order?.customerPhone ?? first.customerPhone ?? null,
     deliveryCompletedAt: toIsoOrNull(order?.deliveryCompletedAt || first.deliveryCompletedAt),
     deliveryAddress: order?.deliveryAddress ?? first.deliveryAddress ?? null,
+    deskPhotos,
     paymentSlipImage: order?.paymentSlipImage ?? first.paymentSlipImage ?? null,
     slipViewedAt: toIsoOrNull(order?.slipViewedAt || first.slipViewedAt),
     paidAt: toIsoOrNull(order?.paidAt || first.paidAt),

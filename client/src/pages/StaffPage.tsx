@@ -63,6 +63,7 @@ type StaffFormLine = {
   deskItemId: string;
   qty: number;
   price: number | "";
+  photos: PendingSalePhoto[];
 };
 
 type PendingSalePhoto = {
@@ -120,6 +121,7 @@ function createOrderLine(product?: Product, delivery: DeliveryMode = "delivery")
     deskItemId: product?.id || "",
     qty: 1,
     price: product ? (delivery === "delivery" ? product.deliveryPrice : product.onsitePrice) : "",
+    photos: [],
   };
 }
 
@@ -160,11 +162,12 @@ export default function StaffPage() {
   const newSalePhotosRef = useRef<PendingSalePhoto[]>([]);
   newSalePhotosRef.current = newSalePhotos;
   const [form, setForm] = useState<StaffFormState>(initialForm(today));
+  const formRef = useRef<StaffFormState>(form);
+  formRef.current = form;
   /** Picker: choose one desk type, then “add to order”. */
   const [pickDeskItemId, setPickDeskItemId] = useState<string>("");
   const [pickQty, setPickQty] = useState<number>(1);
   const [pickPrice, setPickPrice] = useState<number | "">("");
-  const hasPendingSalePhotos = newSalePhotos.length > 0;
 
   async function loadPage(): Promise<void> {
     setLoading(true);
@@ -263,6 +266,7 @@ export default function StaffPage() {
   useEffect(() => {
     return () => {
       newSalePhotosRef.current.forEach((photo) => URL.revokeObjectURL(photo.url));
+      formRef.current.items.forEach((line) => line.photos.forEach((photo) => URL.revokeObjectURL(photo.url)));
     };
   }, []);
 
@@ -298,10 +302,15 @@ export default function StaffPage() {
     const qtyAdd = Number(pickQty);
     const priceNum = Number(pickPrice);
     setForm((current) => {
-      const matchIdx = current.items.findIndex(
-        (line) =>
-          line.deskItemId === pickDeskItemId && Number(line.price || 0) === priceNum
-      );
+      const photosForLine = newSalePhotos;
+      const matchIdx = photosForLine.length === 0
+        ? current.items.findIndex(
+            (line) =>
+              line.deskItemId === pickDeskItemId &&
+              Number(line.price || 0) === priceNum &&
+              line.photos.length === 0
+          )
+        : -1;
       if (matchIdx !== -1) {
         return {
           ...current,
@@ -313,16 +322,22 @@ export default function StaffPage() {
       const line = createOrderLine(pickProduct, current.delivery);
       line.qty = qtyAdd;
       line.price = priceNum;
+      line.photos = photosForLine;
       return { ...current, items: [...current.items, line] };
     });
+    setNewSalePhotos([]);
     setPickQty(1);
   }
 
   function removeLineItem(rowId: string) {
-    setForm((current) => ({
-      ...current,
-      items: current.items.filter((line) => line.rowId !== rowId),
-    }));
+    setForm((current) => {
+      const target = current.items.find((line) => line.rowId === rowId);
+      target?.photos.forEach((photo) => URL.revokeObjectURL(photo.url));
+      return {
+        ...current,
+        items: current.items.filter((line) => line.rowId !== rowId),
+      };
+    });
   }
 
   function handleDeliveryChange(delivery: DeliveryMode) {
@@ -428,10 +443,16 @@ export default function StaffPage() {
     }
 
     try {
-      const photoUrls =
-        newSalePhotos.length > 0
-          ? await Promise.all(newSalePhotos.map((photo) => uploadFileToR2(photo.file, "REPAIR_IMAGE")))
-          : [];
+      const linePhotoEntries = await Promise.all(
+        lineItems.map(async (line) => ({
+          rowId: line.rowId,
+          urls:
+            line.photos.length > 0
+              ? await Promise.all(line.photos.map((photo) => uploadFileToR2(photo.file, "SALE_IMAGE")))
+              : [],
+        }))
+      );
+      const photoUrlsByRowId = new Map(linePhotoEntries.map((entry) => [entry.rowId, entry.urls]));
 
       await api.createSale({
         date: form.date,
@@ -440,6 +461,7 @@ export default function StaffPage() {
           type: line.product?.name || "",
           qty: Number(line.qty),
           price: Number(line.price),
+          deskPhotos: photoUrlsByRowId.get(line.rowId) || [],
         })),
         pay: form.pay,
         discount: Number(form.discount),
@@ -451,11 +473,12 @@ export default function StaffPage() {
         addr: form.addr,
         customerPhone: customerPhonePayload,
         deliveryAddress: form.deliveryAddress,
-        note: buildSaleNotePayload(form.note, photoUrls),
+        note: form.note.trim(),
         wFee: workerFee,
         wType: form.delivery === "delivery" ? "po" : "ice",
         promoId: form.promoId || null
       });
+      form.items.forEach((line) => line.photos.forEach((photo) => URL.revokeObjectURL(photo.url)));
       newSalePhotos.forEach((photo) => URL.revokeObjectURL(photo.url));
       setNewSalePhotos([]);
       setForm(initialForm(today));
@@ -794,13 +817,13 @@ export default function StaffPage() {
                         <span className="staff-order-cart__name-txt">{line.product?.name || "—"}</span>
                         <span className="staff-order-cart__name-idx">#{index + 1}</span>
                       </div>
-                      {hasPendingSalePhotos ? (
+                      {line.photos.length > 0 ? (
                         <button
                           type="button"
                           className="sale-slip-link sale-slip-link--staff staff-order-cart__photo-link"
-                          onClick={() => openImageLightbox(newSalePhotos.map((photo) => photo.url), 0)}
+                          onClick={() => openImageLightbox(line.photos.map((photo) => photo.url), 0)}
                         >
-                          ดูรูปแนบ ({newSalePhotos.length})
+                          ดูรูปแนบ ({line.photos.length})
                         </button>
                       ) : null}
                     </div>
@@ -1093,7 +1116,9 @@ export default function StaffPage() {
             <div key={sale.id} className={`sitem ${sale.delivery}`}>
               <div className="sitem-l">
                 {(() => {
-                  const salePhotos = splitSaleNoteAndPhotos(sale.note).photos;
+                  const salePhotos = Array.from(
+                    new Set([...(sale.deskPhotos || []), ...splitSaleNoteAndPhotos(sale.note).photos])
+                  );
                   return (
                     <>
                 <div className="soid">{sale.orderNumber}</div>
@@ -1139,6 +1164,16 @@ export default function StaffPage() {
                       {sale.items.map((item) => (
                         <div key={item.id}>
                           {item.type} x {item.qty} = {formatMoney(item.grandTotal)}
+                          {(item.deskPhotos?.length ?? 0) > 0 ? (
+                            <button
+                              type="button"
+                              className="sale-slip-link sale-slip-link--staff"
+                              style={{ marginLeft: 8 }}
+                              onClick={() => openImageLightbox(item.deskPhotos || [], 0)}
+                            >
+                              รูป {item.deskPhotos!.length}
+                            </button>
+                          ) : null}
                         </div>
                       ))}
                     </div>
