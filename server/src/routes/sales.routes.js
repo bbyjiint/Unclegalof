@@ -304,28 +304,43 @@ function buildLineOrderNumber(orderNumber, lineNumber) {
   return `${orderNumber}-L${String(lineNumber).padStart(2, "0")}`;
 }
 
-async function getNextLogicalOrderSequence(tx, monthStart, monthEnd) {
-  const [legacyCount, salesOrderCount] = await Promise.all([
-    tx.saleRecord.count({
+function isOrderNumberUniqueConstraint(error) {
+  return (
+    error?.code === "P2002" &&
+    Array.isArray(error?.meta?.target) &&
+    error.meta.target.includes("orderNumber")
+  );
+}
+
+function sequenceFromOrderNumber(orderNumber, prefix) {
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(orderNumber || "").match(new RegExp(`^${escapedPrefix}(\\d{4})(?:-L\\d{2})?$`));
+  return match ? Number(match[1]) : 0;
+}
+
+async function getNextLogicalOrderNumber(tx, prefix) {
+  const [legacyRows, salesOrderRows] = await Promise.all([
+    tx.saleRecord.findMany({
       where: {
-        saleDate: {
-          gte: monthStart,
-          lt: monthEnd,
-        },
         salesOrderId: null,
+        orderNumber: { startsWith: prefix },
       },
+      select: { orderNumber: true },
     }),
-    tx.salesOrder.count({
+    tx.salesOrder.findMany({
       where: {
-        saleDate: {
-          gte: monthStart,
-          lt: monthEnd,
-        },
+        orderNumber: { startsWith: prefix },
       },
+      select: { orderNumber: true },
     }),
   ]);
 
-  return legacyCount + salesOrderCount + 1;
+  const maxSequence = [...legacyRows, ...salesOrderRows].reduce(
+    (max, row) => Math.max(max, sequenceFromOrderNumber(row.orderNumber, prefix)),
+    0
+  );
+
+  return `${prefix}${String(maxSequence + 1).padStart(4, "0")}`;
 }
 
 async function loadLogicalSaleGroup(tx, id) {
@@ -544,8 +559,7 @@ router.post(
         priorUnits = priorAgg._sum.quantity ?? 0;
       }
 
-      const sequenceNext = await getNextLogicalOrderSequence(prisma, monthStart, monthEnd);
-      const publicOrderNumber = `SO-${year}${String(month).padStart(2, "0")}-${String(sequenceNext).padStart(4, "0")}`;
+      const orderNumberPrefix = `SO-${year}${String(month).padStart(2, "0")}-`;
 
       const avgCostByDeskItemId = new Map();
       const uniqueDeskItemIds = [...new Set(resolvedLines.map((line) => line.deskItem.id))];
@@ -573,7 +587,11 @@ router.post(
       }
       const orderDeskPhotos = Array.from(new Set([...deskPhotos, ...resolvedLines.flatMap((line) => line.deskPhotos || [])]));
 
-      const savedRows = await prisma.$transaction(async (tx) => {
+      let savedRows = null;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const publicOrderNumber = await getNextLogicalOrderNumber(prisma, orderNumberPrefix);
+        try {
+          savedRows = await prisma.$transaction(async (tx) => {
 
         const salesOrder = await tx.salesOrder.create({
           data: {
@@ -724,10 +742,22 @@ router.post(
         }
 
         return createdRows;
-      }, {
-        maxWait: 5000,
-        timeout: 15000,
-      });
+          }, {
+            maxWait: 5000,
+            timeout: 15000,
+          });
+          break;
+        } catch (error) {
+          if (attempt < 4 && isOrderNumberUniqueConstraint(error)) {
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (!savedRows) {
+        throw new Error("Failed to create sale order number");
+      }
 
       const includeCost = req.role === UserRole.OWNER;
       const item = saleGroupToFrontendSale(
