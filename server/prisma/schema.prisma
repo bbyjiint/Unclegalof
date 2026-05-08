@@ -233,6 +233,7 @@ model SaleRecord {
   commissions          SaleRecordCommission[]
   tenantOwner          User                   @relation("SaleTenant", fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
+  @@index([ownerId])
   @@index([saleDate])
   @@index([deskType])
   @@index([appliedPromotion])

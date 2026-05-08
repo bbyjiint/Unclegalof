@@ -1,3 +1,4 @@
+import compression from "compression";
 import cors from "cors";
 import express from "express";
 import catalogRoutes from "./routes/catalog.routes.js";
@@ -42,6 +43,10 @@ export function createApp() {
   }
 
   app.disable("x-powered-by");
+
+  // Compress all JSON/text responses. Must be registered before route handlers
+  // so the response stream is wrapped before any data is written.
+  app.use(compression());
 
   // Security: CORS
   app.use(
