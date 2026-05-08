@@ -49,24 +49,24 @@ router.get(
 
       const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
 
-      // All-time totals — reduce instead of aggregate so sums are plain numbers (no BigInt/JSON issues)
-      const allSalesRows = await prisma.saleRecord.findMany({
-        select: {
-          amount: true,
-          cogsTotal: true,
-          quantity: true,
-          avgUnitCostSnapshot: true,
-        },
-      });
-      let income = 0;
-      let cogsFromSales = 0;
-      for (const r of allSalesRows) {
-        income += Number(r.amount ?? 0);
-        let lineCogs = Number(r.cogsTotal ?? 0);
-        if (lineCogs <= 0 && Number(r.avgUnitCostSnapshot ?? 0) > 0) {
-          lineCogs = Number(r.avgUnitCostSnapshot) * Number(r.quantity ?? 0);
-        }
-        cogsFromSales += lineCogs;
+      // All-time totals — aggregate in the DB rather than loading every row into memory.
+      // Note: rows where cogsTotal <= 0 but avgUnitCostSnapshot > 0 need the fallback
+      // (quantity * avgUnitCostSnapshot). We fetch that subset only — typically a tiny
+      // fraction of total rows (legacy data before cogsTotal was populated).
+      const [aggResult, legacyRows] = await Promise.all([
+        prisma.saleRecord.aggregate({
+          _sum: { amount: true, cogsTotal: true },
+        }),
+        prisma.saleRecord.findMany({
+          where: { cogsTotal: { lte: 0 }, avgUnitCostSnapshot: { gt: 0 } },
+          select: { quantity: true, avgUnitCostSnapshot: true },
+        }),
+      ]);
+
+      const income = Number(aggResult._sum.amount ?? 0);
+      let cogsFromSales = Number(aggResult._sum.cogsTotal ?? 0);
+      for (const r of legacyRows) {
+        cogsFromSales += Number(r.avgUnitCostSnapshot) * Number(r.quantity ?? 0);
       }
       const cost = cogsFromSales;
       const profit = income - cost;
