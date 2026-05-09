@@ -26,13 +26,13 @@ export default function OwnerOverviewTab() {
     <div className="owner-dash__panel">
       <h2 className="owner-dash__h2">ภาพรวมธุรกิจ</h2>
 
-      <div className="owner-dash__card owner-dash__card--muted">
-        <p style={{ margin: "0 0 12px", fontSize: 13, color: "#636366" }}>
-          ตัวเลขด้านล่างทั้งหมดแสดงเฉพาะ<strong> เดือน/ปีที่เลือก</strong>
+      <div className="owner-dash__card owner-dash__card--muted" style={{ padding: "10px 14px" }}>
+        <p style={{ margin: "0 0 8px", fontSize: 12, color: "#636366" }}>
+          แสดงข้อมูลเฉพาะ<strong> เดือน/ปีที่เลือก</strong>
         </p>
         <div className="owner-dash__filters">
           <div className="owner-dash__filter-group">
-            <label htmlFor="owner-ov-month">เดือน (กรองรายการขาย)</label>
+            <label htmlFor="owner-ov-month">เดือน</label>
             <select
               id="owner-ov-month"
               value={month}

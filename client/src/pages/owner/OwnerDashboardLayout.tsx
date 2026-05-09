@@ -31,17 +31,17 @@ import {
 import "./owner-dashboard.css";
 
 const NAV_ITEMS = [
-  { to: "/owner", end: true as const, label: "ภาพรวม", Icon: LayoutDashboard },
+  { to: "/owner/reports", end: false as const, label: "รายการขาย", Icon: ClipboardList },
+  { to: "/owner/overview", end: true as const, label: "ภาพรวม", Icon: LayoutDashboard },
   { to: "/owner/employees", end: false as const, label: "พนักงาน", Icon: Users },
   { to: "/owner/promotions", end: false as const, label: "โปรโมชั่น", Icon: Tag },
   { to: "/owner/purchasing", end: false as const, label: "รับของ / สต็อก", Icon: Package },
-  { to: "/owner/delivery", end: false as const, label: "ค่าจัดส่ง", Icon: MapPin },
-  { to: "/owner/reports", end: false as const, label: "รายงาน", Icon: ClipboardList }
+  { to: "/owner/delivery", end: false as const, label: "ค่าจัดส่ง", Icon: MapPin }
 ];
 
 function pageTitleFromPath(pathname: string): string {
   const p = pathname.replace(/\/+$/, "") || "/";
-  if (p === "/owner") {
+  if (p === "/owner/overview") {
     return "ภาพรวม";
   }
   const routes: Array<{ prefix: string; title: string }> = [
@@ -49,7 +49,7 @@ function pageTitleFromPath(pathname: string): string {
     { prefix: "/owner/promotions", title: "โปรโมชั่น" },
     { prefix: "/owner/purchasing", title: "รับของ & สต็อก" },
     { prefix: "/owner/delivery", title: "ค่าจัดส่ง" },
-    { prefix: "/owner/reports", title: "รายงาน" }
+    { prefix: "/owner/reports", title: "รายการขาย" }
   ];
   for (const { prefix, title } of routes) {
     if (p === prefix || p.startsWith(`${prefix}/`)) {
@@ -68,7 +68,6 @@ export default function OwnerDashboardLayout() {
   const [error, setError] = useState<string | null>(null);
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
   const [year, setYear] = useState<number>(now.getFullYear());
-  const [weekFilter, setWeekFilter] = useState<"all" | "1" | "2" | "3" | "4" | "5">("all");
   const [payStatusFilter, setPayStatusFilter] = useState<"all" | "paid" | "pending" | "deposit">("all");
   const [sortBy, setSortBy] = useState<"time" | "total">("time");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
@@ -308,23 +307,11 @@ export default function OwnerDashboardLayout() {
 
   const sales = dashboard?.sales || [];
   const filteredAndSortedSales = useMemo(() => {
-    const inFilteredWeek = (dateValue?: string | null) => {
-      if (weekFilter === "all") {
-        return true;
-      }
-      if (!dateValue) {
-        return false;
-      }
-      const dayOfMonth = new Date(dateValue).getDate();
-      const weekOfMonth = Math.min(5, Math.floor((dayOfMonth - 1) / 7) + 1);
-      return String(weekOfMonth) === weekFilter;
-    };
-
     const statusFiltered = sales.filter((sale) => {
       if (payStatusFilter !== "all" && sale.payStatus !== payStatusFilter) {
         return false;
       }
-      return inFilteredWeek(sale.date);
+      return true;
     });
 
     return [...statusFiltered].sort((a, b) => {
@@ -338,7 +325,7 @@ export default function OwnerDashboardLayout() {
       }
       return sortDir === "asc" ? diff : -diff;
     });
-  }, [sales, payStatusFilter, weekFilter, sortBy, sortDir]);
+  }, [sales, payStatusFilter, sortBy, sortDir]);
 
   const statusCount = useMemo(
     () => ({
@@ -366,8 +353,6 @@ export default function OwnerDashboardLayout() {
     year,
     setMonth,
     setYear,
-    weekFilter,
-    setWeekFilter,
     payStatusFilter,
     setPayStatusFilter,
     sortBy,

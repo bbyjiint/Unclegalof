@@ -41,8 +41,6 @@ export type OwnerDashboardContextValue = {
   year: number;
   setMonth: Dispatch<SetStateAction<number>>;
   setYear: Dispatch<SetStateAction<number>>;
-  weekFilter: "all" | "1" | "2" | "3" | "4" | "5";
-  setWeekFilter: Dispatch<SetStateAction<"all" | "1" | "2" | "3" | "4" | "5">>;
   payStatusFilter: "all" | "paid" | "pending" | "deposit";
   setPayStatusFilter: Dispatch<SetStateAction<"all" | "paid" | "pending" | "deposit">>;
   sortBy: "time" | "total";
