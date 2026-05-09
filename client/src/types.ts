@@ -91,6 +91,16 @@ export interface Sale {
   cogsTotal?: number;
   /** OWNER-only: (รายได้สินค้า) - COGS */
   grossProfit?: number;
+  /** ค่าจัดส่ง (ลูกค้าจ่าย) — เท่ากับ workerDistanceFee เมื่อจัดส่ง / 0 เมื่อรับเอง */
+  deliveryFee?: number;
+  /** ค่ายก/แบกของพนักงานต่อออเดอร์ (รวมทุกบรรทัด) */
+  workerLiftFee?: number;
+  /** ค่าจัดส่งระยะทางที่จ่ายให้พนักงาน (เท่ากับค่าจัดส่งของลูกค้าเมื่อจัดส่ง) */
+  workerDistanceFee?: number;
+  /** ค่าตอบแทนพนักงานรวม = workerLiftFee + workerDistanceFee */
+  employeePayout?: number;
+  /** รายได้สุทธิเจ้าของกิจการ = grandTotal − employeePayout */
+  ownerNet?: number;
 }
 
 /** OWNER-only: คงคลัง + ต้นทุนเฉลี่ยจากค่าที่บันทึกตอนรับของ */

@@ -108,6 +108,22 @@ export function saleGroupToFrontendSale(group, options = {}) {
     photoUrlsFromNote(order?.remarks),
     photoUrlsFromNote(first.remarks)
   );
+  const totalLineLiftFees = rows.reduce((sum, row) => sum + Number(row.workerLiftFee || 0), 0);
+  const headerWorkerLiftFee = order?.workerLiftFee != null ? Number(order.workerLiftFee || 0) : totalLineLiftFees;
+  const headerWorkerDistanceFee =
+    order?.workerDistanceFee != null
+      ? Number(order.workerDistanceFee || 0)
+      : (order?.deliveryType || first.deliveryType) === "delivery"
+        ? Number(order?.workerFee ?? first.workerFee ?? 0)
+        : 0;
+  const headerEmployeePayout =
+    order?.employeePayout != null
+      ? Number(order.employeePayout || 0)
+      : headerWorkerLiftFee + headerWorkerDistanceFee;
+  const headerOwnerNet =
+    order?.ownerNet != null
+      ? Number(order.ownerNet || 0)
+      : Math.max(0, Number(grandTotal || 0) - headerEmployeePayout);
 
   const base = {
     id: first.id,
@@ -137,6 +153,11 @@ export function saleGroupToFrontendSale(group, options = {}) {
     paymentBatchTotalAmount: first.paymentBatch?.totalAmount ?? null,
     items: lineItems,
     salesOrderId: order?.id || first.salesOrderId || null,
+    deliveryFee: headerWorkerDistanceFee,
+    workerLiftFee: headerWorkerLiftFee,
+    workerDistanceFee: headerWorkerDistanceFee,
+    employeePayout: headerEmployeePayout,
+    ownerNet: headerOwnerNet,
   };
 
   if (options.includeCost) {

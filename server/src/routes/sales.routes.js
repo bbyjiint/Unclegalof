@@ -22,6 +22,7 @@ import {
   saleRecordFrontendInclude,
   saleRecordsToFrontendSales,
 } from "../lib/salesOrders.js";
+import { computeEmployeePayout, computeLineWorkerLiftFee } from "../lib/workerPayouts.js";
 
 const router = Router();
 
@@ -549,6 +550,25 @@ router.post(
       const manualShares = allocateIntegerTotal(payload.manualDisc || 0, resolvedLines.map((line) => line.baseAmount));
       const feeShares = allocateIntegerTotal(payload.wFee || 0, resolvedLines.map((line) => line.baseAmount));
 
+      const customerDeliveryFee = Number(payload.wFee || 0);
+      const customerTotal = Math.max(
+        0,
+        subtotal - Number(payload.discount || 0) - Number(payload.manualDisc || 0) + customerDeliveryFee
+      );
+      const lineLiftFees = resolvedLines.map((line) =>
+        computeLineWorkerLiftFee({
+          name: line.deskItem.name,
+          qty: line.qty,
+          deliveryMode: payload.delivery,
+        })
+      );
+      const payoutSummary = computeEmployeePayout({
+        lines: resolvedLines.map((line) => ({ name: line.deskItem.name, qty: line.qty })),
+        deliveryMode: payload.delivery,
+        deliveryFee: customerDeliveryFee,
+        customerTotal,
+      });
+
       let priorUnits = 0;
       if (req.role === UserRole.SALES) {
         const priorAgg = await prisma.saleRecord.aggregate({
@@ -616,11 +636,15 @@ router.post(
             manualDiscount: payload.manualDisc || 0,
             manualDiscountReason: payload.manualReason || null,
             subtotal,
-            grandTotal: Math.max(0, subtotal - Number(payload.discount || 0) - Number(payload.manualDisc || 0) + Number(payload.wFee || 0)),
+            grandTotal: customerTotal,
             deliveryType: payload.delivery,
             deliveryRange,
             workerFee: payload.wFee || 0,
             workerFeeType: payload.wType || null,
+            workerLiftFee: payoutSummary.workerLiftFee,
+            workerDistanceFee: payoutSummary.workerDistanceFee,
+            employeePayout: payoutSummary.employeePayout,
+            ownerNet: payoutSummary.ownerNet,
             customerName: payload.addr || null,
             customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
             deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
@@ -642,6 +666,7 @@ router.post(
           const avgUnitCostSnapshot = avgCostByDeskItemId.get(line.deskItem.id) ?? 0;
           const cogsTotal = avgUnitCostSnapshot * line.qty;
           const grossProfit = lineAmount - workerFee - cogsTotal;
+          const workerLiftFee = lineLiftFees[index] || 0;
           const lineNumber = index + 1;
 
           await tx.salesOrderLine.create({
@@ -658,6 +683,7 @@ router.post(
               avgUnitCostSnapshot,
               cogsTotal,
               grossProfit,
+              workerLiftFee,
             },
           });
 
@@ -682,6 +708,7 @@ router.post(
               deliveryRange,
               workerFee,
               workerFeeType: payload.wType || null,
+              workerLiftFee,
               customerName: payload.addr || null,
               customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
               deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,

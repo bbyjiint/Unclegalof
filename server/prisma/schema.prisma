@@ -138,6 +138,14 @@ model SalesOrder {
   deliveryRange        Int?
   workerFee            Int               @default(0)
   workerFeeType        String?
+  /// Total ค่ายก/แบกต่อออเดอร์ (sum across lines), จ่ายให้พนักงาน.
+  workerLiftFee        Int               @default(0)
+  /// ค่าจัดส่งระยะทางที่จ่ายให้พนักงาน (เท่ากับ workerFee เมื่อจัดส่ง, 0 เมื่อรับเอง).
+  workerDistanceFee    Int               @default(0)
+  /// รวมค่าตอบแทนพนักงานต่อออเดอร์ = workerLiftFee + workerDistanceFee.
+  employeePayout       Int               @default(0)
+  /// รายได้สุทธิเจ้าของกิจการต่อออเดอร์ = grandTotal − employeePayout.
+  ownerNet             Int               @default(0)
   customerName         String?
   customerPhone        String?           @db.Text
   deliveryAddress      String?           @db.Text
@@ -177,6 +185,8 @@ model SalesOrderLine {
   avgUnitCostSnapshot Int          @default(0)
   cogsTotal           Int          @default(0)
   grossProfit         Int          @default(0)
+  /// ค่ายก/แบกของพนักงานต่อบรรทัด (unit lift fee × quantity).
+  workerLiftFee       Int          @default(0)
   deskItem            DeskItem     @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   salesOrder          SalesOrder   @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
@@ -213,6 +223,8 @@ model SaleRecord {
   deliveryRange        Int?
   workerFee            Int                    @default(0)
   workerFeeType        String?
+  /// ค่ายก/แบกของพนักงานต่อบรรทัดในออเดอร์.
+  workerLiftFee        Int                    @default(0)
   customerName         String?
   /// Contact phone for delivery (optional; recommended for จัดส่ง).
   customerPhone        String?                @db.Text

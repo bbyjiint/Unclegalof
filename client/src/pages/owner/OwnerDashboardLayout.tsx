@@ -5,9 +5,11 @@ import {
   ClipboardList,
   LayoutDashboard,
   MapPin,
+  Menu,
   Package,
   Tag,
-  Users
+  Users,
+  X
 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { PaymentSlipLightbox } from "../../components/PaymentSlipLightbox";
@@ -61,6 +63,7 @@ export default function OwnerDashboardLayout() {
   const now = new Date();
   const location = useLocation();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [dashboard, setDashboard] = useState<OwnerDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
@@ -415,13 +418,43 @@ export default function OwnerDashboardLayout() {
 
   return (
     <OwnerDashboardContext.Provider value={contextValue}>
-      <main className={`owrap owner-dash${sidebarCollapsed ? " owner-dash--sidebar-collapsed" : ""}`}>
+      <main className={`owrap owner-dash${sidebarCollapsed ? " owner-dash--sidebar-collapsed" : ""}${mobileSidebarOpen ? " owner-dash--mobile-sidebar-open" : ""}`}>
+
+        {/* Mobile topbar */}
         <header className="owner-dash__topbar">
+          <button
+            type="button"
+            className="owner-dash__hamburger"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="เปิดเมนู"
+            aria-expanded={mobileSidebarOpen}
+          >
+            <Menu size={22} strokeWidth={2} aria-hidden />
+          </button>
           <h1 className="owner-dash__topbar-title">{pageTitle}</h1>
         </header>
 
+        {/* Mobile backdrop */}
+        {mobileSidebarOpen ? (
+          <div
+            className="owner-dash__mobile-backdrop"
+            onClick={() => setMobileSidebarOpen(false)}
+            aria-hidden
+          />
+        ) : null}
+
         <aside className="owner-dash__sidebar" aria-label="เมนูแดชบอร์ดเจ้าของ">
           <div className="owner-dash__sidebar-head">
+            {/* Mobile close button */}
+            <button
+              type="button"
+              className="owner-dash__sidebar-close"
+              onClick={() => setMobileSidebarOpen(false)}
+              aria-label="ปิดเมนู"
+            >
+              <X size={18} strokeWidth={2} aria-hidden />
+            </button>
+            {/* Desktop collapse button */}
             <button
               type="button"
               className="owner-dash__sidebar-collapse"
@@ -442,6 +475,7 @@ export default function OwnerDashboardLayout() {
                 key={to}
                 to={to}
                 end={end}
+                onClick={() => setMobileSidebarOpen(false)}
                 className={({ isActive }) =>
                   `owner-dash__nav-link${isActive ? " owner-dash__nav-link--active" : ""}`
                 }
