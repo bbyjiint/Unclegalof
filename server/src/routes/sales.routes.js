@@ -8,7 +8,6 @@ import { requireOwner, requireSales } from "../middleware/authorize.middleware.j
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { normalizeCustomerPhoneThai10 } from "../lib/adapters.js";
 import { getCanonicalCompanyOwnerId } from "../lib/company.js";
-import { getAverageRecordedCost } from "../lib/inventoryCost.js";
 import {
   commissionBahtForLine,
   MONTHLY_COMMISSION_FREE_UNITS,
@@ -509,9 +508,27 @@ router.post(
       const month = saleDate.getUTCMonth() + 1;
       const monthStart = new Date(Date.UTC(year, month - 1, 1));
       const monthEnd = new Date(Date.UTC(year, month, 1));
+      // Batch desk item lookups — 2 parallel queries instead of L sequential ones
+      const byIdLines = linesInput.filter((l) => l.deskItemId);
+      const byNameLines = linesInput.filter((l) => !l.deskItemId && String(l.type ?? "").trim());
+
+      const [itemsById, itemsByName] = await Promise.all([
+        byIdLines.length > 0
+          ? prisma.deskItem.findMany({ where: { id: { in: byIdLines.map((l) => l.deskItemId) } } })
+          : Promise.resolve([]),
+        byNameLines.length > 0
+          ? prisma.deskItem.findMany({ where: { name: { in: byNameLines.map((l) => l.type) } } })
+          : Promise.resolve([]),
+      ]);
+
+      const deskItemMapById = new Map(itemsById.map((d) => [d.id, d]));
+      const deskItemMapByName = new Map(itemsByName.map((d) => [d.name, d]));
+
       const resolvedLines = [];
       for (const line of linesInput) {
-        const deskItem = await resolveDeskItemForLine(prisma, line);
+        const deskItem = line.deskItemId
+          ? deskItemMapById.get(line.deskItemId)
+          : deskItemMapByName.get(String(line.type ?? "").trim());
         if (!deskItem) {
           const productLabel = line.type || line.deskItemId || "unknown";
           const error = new Error(`Desk item "${productLabel}" not found. Please create it first in catalog.`);
@@ -547,11 +564,24 @@ router.post(
       const sequenceNext = await getNextLogicalOrderSequence(prisma, monthStart, monthEnd);
       const publicOrderNumber = `SO-${year}${String(month).padStart(2, "0")}-${String(sequenceNext).padStart(4, "0")}`;
 
-      const avgCostByDeskItemId = new Map();
       const uniqueDeskItemIds = [...new Set(resolvedLines.map((line) => line.deskItem.id))];
-      for (const deskItemId of uniqueDeskItemIds) {
-        const avgRec = await getAverageRecordedCost(prisma, deskItemId);
-        avgCostByDeskItemId.set(deskItemId, avgRec?.avgUnitCost ?? 0);
+
+      // Single groupBy instead of D sequential aggregate queries
+      const costLogAggs = await prisma.deskItemCostLog.groupBy({
+        by: ["deskItemId"],
+        where: { deskItemId: { in: uniqueDeskItemIds } },
+        _avg: { costPerUnit: true },
+        _count: { _all: true },
+      });
+      const avgCostByDeskItemId = new Map(
+        costLogAggs
+          .filter((row) => row._count._all > 0 && row._avg.costPerUnit != null)
+          .map((row) => [row.deskItemId, Math.round(row._avg.costPerUnit)])
+      );
+      for (const id of uniqueDeskItemIds) {
+        if (!avgCostByDeskItemId.has(id)) {
+          avgCostByDeskItemId.set(id, 0);
+        }
       }
 
       const sourceLots = await prisma.inventoryLot.findMany({

@@ -49,16 +49,18 @@ router.get(
 
       const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
 
-      // All-time totals — aggregate in the DB rather than loading every row into memory.
-      // Note: rows where cogsTotal <= 0 but avgUnitCostSnapshot > 0 need the fallback
-      // (quantity * avgUnitCostSnapshot). We fetch that subset only — typically a tiny
-      // fraction of total rows (legacy data before cogsTotal was populated).
+      // Monthly totals for the selected month/year — same date window as the sales list above.
       const [aggResult, legacyRows] = await Promise.all([
         prisma.saleRecord.aggregate({
+          where: { saleDate: { gte: start, lt: end } },
           _sum: { amount: true, cogsTotal: true },
         }),
         prisma.saleRecord.findMany({
-          where: { cogsTotal: { lte: 0 }, avgUnitCostSnapshot: { gt: 0 } },
+          where: {
+            saleDate: { gte: start, lt: end },
+            cogsTotal: { lte: 0 },
+            avgUnitCostSnapshot: { gt: 0 },
+          },
           select: { quantity: true, avgUnitCostSnapshot: true },
         }),
       ]);

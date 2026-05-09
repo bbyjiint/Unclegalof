@@ -620,14 +620,16 @@ router.post(
       const payload = req.body;
       const note = payload.note?.trim() || null;
 
-      for (const item of payload.items) {
-        const deskItem = await prisma.deskItem.findUnique({
-          where: { id: item.deskItemId },
-        });
-
-        if (!deskItem) {
-          return res.status(404).json({ error: `Desk item ${item.deskItemId} not found` });
-        }
+      // Single query instead of one findUnique per item
+      const requestedDeskItemIds = payload.items.map((item) => item.deskItemId);
+      const foundDeskItems = await prisma.deskItem.findMany({
+        where: { id: { in: requestedDeskItemIds } },
+        select: { id: true },
+      });
+      const foundDeskItemIdSet = new Set(foundDeskItems.map((d) => d.id));
+      const missingDeskItemId = requestedDeskItemIds.find((id) => !foundDeskItemIdSet.has(id));
+      if (missingDeskItemId) {
+        return res.status(404).json({ error: `Desk item ${missingDeskItemId} not found` });
       }
 
       const created = await prisma.$transaction(async (tx) => {

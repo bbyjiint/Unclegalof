@@ -52,6 +52,7 @@ enum StoredFilePurpose {
   PAYMENT_SLIP
   REPAIR_IMAGE
   SALE_IMAGE
+  DELIVERY_PROOF
 }
 
 model User {
@@ -145,6 +146,7 @@ model SalesOrder {
   paymentSlipImage     String?           @db.Text
   slipViewedAt         DateTime?
   paidAt               DateTime?
+  deliveryProofImage   String?           @db.Text
   createdByUserId      String?           @db.Uuid
   createdBy            User?             @relation("SalesOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   deliveryFee          DeliveryFee?      @relation(fields: [deliveryRange], references: [range])
@@ -220,6 +222,7 @@ model SaleRecord {
   paymentSlipImage     String?                @db.Text
   slipViewedAt         DateTime?
   paidAt               DateTime?
+  deliveryProofImage   String?                @db.Text
   paymentBatchId       String?                @db.Uuid
   salesOrderId         String?                @db.Uuid
   /// User who created this sale row (audit / accountability); not cleared on shared edits.

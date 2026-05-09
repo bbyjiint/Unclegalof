@@ -28,7 +28,7 @@ export default function OwnerOverviewTab() {
 
       <div className="owner-dash__card owner-dash__card--muted">
         <p style={{ margin: "0 0 12px", fontSize: 13, color: "#636366" }}>
-          ยอดขายด้านล่างใช้<strong> เดือน/ปีที่เลือก</strong> — ตัวเลขกล่องสรุปด้านล่างเป็น<strong> สะสมทั้งหมด</strong> (รายรับ − ต้นทุนสินค้า)
+          ตัวเลขด้านล่างทั้งหมดแสดงเฉพาะ<strong> เดือน/ปีที่เลือก</strong>
         </p>
         <div className="owner-dash__filters">
           <div className="owner-dash__filter-group">
@@ -64,20 +64,20 @@ export default function OwnerOverviewTab() {
       </button>
 
       <p style={{ margin: "12px 0 0", fontSize: 13, color: "#636366" }}>
-        สรุปสะสม: ต้นทุนคิดจาก<strong> ค่าเฉลี่ยของราคาต้นทุนที่บันทึกตอนรับของเข้า</strong> (แต่ละครั้งรับของที่ใส่ราคา = 1 จุดใช้หาค่าเฉลี่ย) ไม่รวมค่าแรงหรือเงินเดือน
+        ต้นทุนคิดจาก<strong> ค่าเฉลี่ยของราคาต้นทุนที่บันทึกตอนรับของเข้า</strong> ไม่รวมค่าแรงหรือเงินเดือน
       </p>
 
       <div className="owner-dash__grid4" style={{ marginTop: 14 }}>
         <div className="owner-dash__stat">
-          <label>รายรับสะสม</label>
+          <label>รายรับ ({month}/{year})</label>
           <div className="val">{formatMoney(summary.income)}</div>
         </div>
         <div className="owner-dash__stat">
-          <label>ต้นทุนสินค้าสะสม</label>
+          <label>ต้นทุนสินค้า ({month}/{year})</label>
           <div className="val">{formatMoney(summary.cogsFromSales)}</div>
         </div>
         <div className="owner-dash__stat">
-          <label>กำไรขายสะสม</label>
+          <label>กำไรขาย ({month}/{year})</label>
           <div className="val">{formatMoney(summary.profit)}</div>
         </div>
         <div className="owner-dash__stat">

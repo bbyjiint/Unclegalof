@@ -3,7 +3,7 @@ export type PayStatus = "paid" | "pending" | "deposit";
 export type RepairStatus = "open" | "inprogress" | "done";
 export type RepairKind = "repair" | "claim";
 export type UserRole = "OWNER" | "SALES" | "REPAIRS";
-export type StoredFilePurpose = "PAYMENT_SLIP" | "REPAIR_IMAGE" | "SALE_IMAGE";
+export type StoredFilePurpose = "PAYMENT_SLIP" | "REPAIR_IMAGE" | "SALE_IMAGE" | "DELIVERY_PROOF";
 
 export interface AuthUser {
   id: string;
@@ -121,6 +121,7 @@ export interface DeliveryOrderRow {
   customerPhone: string | null;
   deliveryAddress: string | null;
   productName: string;
+  deliveryProofImage?: string | null;
   deskPhotos?: string[];
   items?: Array<{
     id: string;

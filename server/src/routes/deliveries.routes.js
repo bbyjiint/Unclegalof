@@ -14,6 +14,10 @@ const paramsIdSchema = z.object({
   id: z.string().uuid(),
 });
 
+const completeBodySchema = z.object({
+  proofImageUrl: z.string().url(),
+});
+
 /**
  * GET /api/deliveries — OWNER + REPAIRS: pending home deliveries (not yet marked complete).
  */
@@ -57,9 +61,11 @@ router.patch(
   requireRole(UserRole.OWNER, UserRole.REPAIRS),
   writeRateLimiter,
   validate(paramsIdSchema, "params"),
+  validate(completeBodySchema),
   async (req, res, next) => {
     try {
       const { id } = req.params;
+      const { proofImageUrl } = req.body;
 
       const order = await prisma.salesOrder.findUnique({
         where: { id },
@@ -79,11 +85,11 @@ router.patch(
         const updated = await prisma.$transaction(async (tx) => {
           await tx.salesOrder.update({
             where: { id },
-            data: { deliveryCompletedAt: completedAt },
+            data: { deliveryCompletedAt: completedAt, deliveryProofImage: proofImageUrl },
           });
           await tx.saleRecord.updateMany({
             where: { salesOrderId: id },
-            data: { deliveryCompletedAt: completedAt },
+            data: { deliveryCompletedAt: completedAt, deliveryProofImage: proofImageUrl },
           });
           return completedAt;
         });
@@ -117,11 +123,11 @@ router.patch(
         const updated = await prisma.$transaction(async (tx) => {
           await tx.salesOrder.update({
             where: { id: sale.salesOrderId },
-            data: { deliveryCompletedAt: completedAt },
+            data: { deliveryCompletedAt: completedAt, deliveryProofImage: proofImageUrl },
           });
           await tx.saleRecord.updateMany({
             where: { salesOrderId: sale.salesOrderId },
-            data: { deliveryCompletedAt: completedAt },
+            data: { deliveryCompletedAt: completedAt, deliveryProofImage: proofImageUrl },
           });
           return completedAt;
         });
@@ -135,7 +141,7 @@ router.patch(
 
       const updated = await prisma.saleRecord.update({
         where: { id },
-        data: { deliveryCompletedAt: new Date() },
+        data: { deliveryCompletedAt: new Date(), deliveryProofImage: proofImageUrl },
         select: { deliveryCompletedAt: true },
       });
 

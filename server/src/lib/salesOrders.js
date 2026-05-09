@@ -174,37 +174,38 @@ export function saleRecordsToFrontendSales(saleRecords, options = {}) {
 
 export async function expandLogicalSaleIds(prisma, ids) {
   const uniqueIds = [...new Set(ids)];
-  const saleRecords = [];
-  const missingIds = [];
+  const includeClause = {
+    paymentBatch: true,
+    createdBy: { select: { id: true } },
+  };
 
-  for (const id of uniqueIds) {
-    const sale = await prisma.saleRecord.findUnique({
-      where: { id },
-      include: {
-        paymentBatch: true,
-        createdBy: { select: { id: true } },
-      },
+  // Single query instead of one findUnique per ID
+  const initialRecords = await prisma.saleRecord.findMany({
+    where: { id: { in: uniqueIds } },
+    include: includeClause,
+  });
+
+  const foundIds = new Set(initialRecords.map((r) => r.id));
+  const missingIds = uniqueIds.filter((id) => !foundIds.has(id));
+
+  const salesOrderIds = [
+    ...new Set(initialRecords.filter((r) => r.salesOrderId).map((r) => r.salesOrderId)),
+  ];
+
+  let allRecords;
+  if (salesOrderIds.length > 0) {
+    // Single query to expand all sales-order siblings at once
+    const groupedRows = await prisma.saleRecord.findMany({
+      where: { salesOrderId: { in: salesOrderIds } },
+      include: includeClause,
     });
-    if (sale) {
-      if (sale.salesOrderId) {
-        const groupedRows = await prisma.saleRecord.findMany({
-          where: { salesOrderId: sale.salesOrderId },
-          include: {
-            paymentBatch: true,
-            createdBy: { select: { id: true } },
-          },
-        });
-        saleRecords.push(...groupedRows);
-      } else {
-        saleRecords.push(sale);
-      }
-      continue;
-    }
-
-    missingIds.push(id);
+    const standaloneRecords = initialRecords.filter((r) => !r.salesOrderId);
+    allRecords = [...standaloneRecords, ...groupedRows];
+  } else {
+    allRecords = initialRecords;
   }
 
-  const dedupedRecords = Array.from(new Map(saleRecords.map((sale) => [sale.id, sale])).values());
+  const dedupedRecords = Array.from(new Map(allRecords.map((sale) => [sale.id, sale])).values());
   return {
     saleRecords: dedupedRecords,
     missingIds,
