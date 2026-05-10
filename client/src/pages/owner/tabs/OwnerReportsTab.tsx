@@ -457,6 +457,12 @@ export default function OwnerReportsTab() {
                         ) : null}
                       </div>
 
+                      {sale.paymentBatchNumber ? (
+                        <div className="rep-card__batch-expected">
+                          ยอดรวม: {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
+                        </div>
+                      ) : null}
+
                       <div className="rep-card__actions">
                         {sale.paymentSlipImage ? (
                           <>
@@ -535,7 +541,7 @@ export default function OwnerReportsTab() {
                         <div>
                           <div style={{ fontWeight: 600, color: "#1d4ed8" }}>{sale.paymentBatchNumber}</div>
                           <div className="csub" style={{ fontSize: 11 }}>
-                            รวมบิล {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
+                            ยอดที่คาดว่าจะได้รับ {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
                           </div>
                         </div>
                       ) : (

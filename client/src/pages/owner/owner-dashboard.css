@@ -2357,6 +2357,13 @@
   margin-bottom: 10px;
 }
 
+.rep-card__batch-expected {
+  font-size: 12px;
+  color: #1d4ed8;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
 .rep-badge {
   display: inline-block;
   font-size: 11px;

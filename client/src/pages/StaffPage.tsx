@@ -113,6 +113,7 @@ function collectSaleProductPhotoUrls(sale: Sale): string[] {
 }
 
 function saleHasProductPhotos(sale: Sale): boolean {
+  if (sale.paymentBatchId || sale.paymentSlipImage) return true;
   return collectSaleProductPhotoUrls(sale).length > 0;
 }
 
