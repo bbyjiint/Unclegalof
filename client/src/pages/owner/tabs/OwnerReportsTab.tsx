@@ -322,7 +322,7 @@ export default function OwnerReportsTab() {
 
   return (
     <div className="owner-dash__panel">
-      <div className="owner-dash__card owner-dash__card--muted rep-filters-card">
+      <div className={`owner-dash__card owner-dash__card--muted rep-filters-card${filtersOpen ? "" : " rep-filters-card--collapsed"}`}>
         {/* Collapsible header */}
         <button
           type="button"
