@@ -103,14 +103,25 @@ export interface Sale {
   ownerNet?: number;
 }
 
-/** OWNER-only: คงคลัง + ต้นทุนเฉลี่ยจากค่าที่บันทึกตอนรับของ */
+/** One active inventory lot in FIFO order */
+export interface InventoryLotPosition {
+  id: string;
+  remainingQty: number;
+  costPerUnit: number;
+  /** remainingQty × costPerUnit; 0 when costPerUnit is 0 */
+  totalValue: number;
+  receivedAt: string;
+  note: string | null;
+}
+
+/** OWNER-only: per-product list of active lots in FIFO order (oldest = next to be consumed) */
 export interface CostPositionRow {
   deskItemId: string;
   name: string;
   onHandQty: number;
-  avgUnitCost: number | null;
-  /** จำนวนครั้งที่บันทึกต้นทุน (ใช้หาค่าเฉลี่ย) */
-  costSampleCount?: number;
+  /** Units in lots with costPerUnit = 0 — awaiting owner cost entry */
+  pendingQty: number;
+  lots: InventoryLotPosition[];
 }
 
 /** Delivery zone band + fee (from GET /catalog/delivery-fees). */
@@ -187,20 +198,42 @@ export interface InventoryLotRow {
   qty: number;
   remainingQty: number;
   costPerUnit?: number;
+  /** Owner-only: number of consumed-lot records still carrying costPerUnitAtSale = 0 for this lot */
+  pendingOrderCount?: number;
   note?: string | null;
   createdAt: string;
 }
 
+/** One sale line awaiting owner cost entry */
+export interface PendingCostOrder {
+  id: string;
+  /** Base order number (e.g. SO-202601-0001), without line suffix */
+  orderNumber: string;
+  productName: string;
+  qty: number;
+  amount: number;
+  saleDate: string;
+  /** Each consumed lot that still has costPerUnitAtSale = 0; null receivedAt = unallocated stock */
+  pendingLots: Array<{ consumedQty: number; receivedAt: string | null }>;
+}
+
 export interface OwnerDashboard {
   summary: {
-    /** สะสมทั้งหมด — รายรับจากการขาย */
+    /** รายรับทั้งหมด — ทุก order รวม pending cost */
     income: number;
-    /** สะสมทั้งหมด — ต้นทุนสินค้า (COGS) */
+    /** COGS จาก confirmed-cost orders เท่านั้น */
     cost: number;
     cogsFromSales: number;
+    /** กำไร = confirmedIncome − COGS (ไม่รวม pending-cost orders) */
     profit: number;
     margin: number;
+    /** จำนวนบรรทัดที่รอเจ้าของกรอกต้นทุน */
+    pendingCostLineCount: number;
+    /** รายรับรวมของ pending-cost orders */
+    pendingCostRevenue: number;
   };
+  /** แต่ละบรรทัดขายที่ costStatus = pending_owner_review สำหรับเดือนที่เลือก */
+  pendingCostOrders: PendingCostOrder[];
   costPositions: CostPositionRow[];
   promotions: Promotion[];
   sales: Sale[];

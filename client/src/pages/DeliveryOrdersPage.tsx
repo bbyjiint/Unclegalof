@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, CheckCircle2, MapPin, MessageCircle, Phone, Truck, User, X } from "lucide-react";
+import { Camera, CheckCircle2, MapPin, MessageCircle, Phone, Table2, Truck, User, X } from "lucide-react";
 import { api } from "../lib/api";
 import { formatMoney } from "../data/constants";
 import type { DeliveryOrderRow } from "../types";
@@ -159,101 +159,92 @@ export default function DeliveryOrdersPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {orders.map((o) => (
-            <article key={o.id} className="card" style={{ margin: 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+            <article key={o.id} className="del-card">
+              {/* Header: order number + price */}
+              <div className="del-card__header">
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: "var(--dark)" }}>{o.orderNumber}</div>
-                  <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{formatSaleDate(o.saleDate)}</div>
-                  {o.productName ? (
-                    <div style={{ fontSize: 13, marginTop: 6, color: "var(--dark)" }}>{o.productName}</div>
-                  ) : null}
+                  <div className="del-card__order-num">{o.orderNumber}</div>
+                  <div className="del-card__date">{formatSaleDate(o.saleDate)}</div>
                 </div>
-                <div style={{ fontWeight: 800, fontSize: 18, color: "var(--green)" }}>{formatMoney(o.totalPrice)}</div>
+                <div className="del-card__price">{formatMoney(o.totalPrice)}</div>
               </div>
-              <hr style={{ border: "none", borderTop: "1px solid rgba(0,0,0,0.08)", margin: "12px 0" }} />
-              <div style={{ display: "grid", gap: 10 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                  <User size={16} strokeWidth={2} style={{ marginTop: 2, flexShrink: 0, opacity: 0.7 }} aria-hidden />
-                  <div>
-                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--muted)" }}>ชื่อ</div>
-                    <div style={{ fontSize: 15 }}>{o.customerName?.trim() || "—"}</div>
+
+              <div className="del-card__divider" />
+
+              {/* Customer info */}
+              <div className="del-card__section">
+                <div className="del-card__section-label">ข้อมูลลูกค้า</div>
+                <div className="del-card__fields">
+                  <div className="del-card__field-row">
+                    <User size={15} strokeWidth={2} className="del-card__field-icon" aria-hidden />
+                    <div className="del-card__field-value">{o.customerName?.trim() || "—"}</div>
                   </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                  <Phone size={16} strokeWidth={2} style={{ marginTop: 2, flexShrink: 0, opacity: 0.7 }} aria-hidden />
-                  <div>
-                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--muted)" }}>โทรศัพท์</div>
-                    <div style={{ fontSize: 15 }}>
+                  <div className="del-card__field-row">
+                    <Phone size={15} strokeWidth={2} className="del-card__field-icon" aria-hidden />
+                    <div className="del-card__field-value">
                       {o.customerPhone?.trim() ? (
                         <a href={`tel:${o.customerPhone.replace(/\s/g, "")}`}>{o.customerPhone.trim()}</a>
-                      ) : (
-                        "—"
-                      )}
+                      ) : "—"}
+                    </div>
+                  </div>
+                  <div className="del-card__field-row">
+                    <MapPin size={15} strokeWidth={2} className="del-card__field-icon" aria-hidden />
+                    <div className="del-card__field-value">
+                      <DeliveryAddressText text={o.deliveryAddress} />
                     </div>
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                  <MapPin size={16} strokeWidth={2} style={{ marginTop: 2, flexShrink: 0, opacity: 0.7 }} aria-hidden />
-                  <div>
-                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--muted)" }}>ที่อยู่ / แผนที่</div>
-                    <DeliveryAddressText text={o.deliveryAddress} />
-                  </div>
-                </div>
-                {(o.items?.length ?? 0) > 0 ? (
-                  <div>
-                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--muted)", marginBottom: 6 }}>
-                      รูปโต๊ะ / รายการสินค้า
-                    </div>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {o.items!.map((item) => {
-                        const photos = item.deskPhotos || [];
-                        return (
-                          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 14 }}>
-                              {item.type} x {item.qty}
-                            </span>
-                            {photos.length > 0 ? (
-                              <button
-                                type="button"
-                                className="sale-slip-link sale-slip-link--staff"
-                                onClick={() => setLightbox({ images: photos, index: 0 })}
-                              >
-                                ดูรูปโต๊ะ ({photos.length})
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: 12, color: "var(--muted)" }}>ไม่มีรูป</span>
-                            )}
+              </div>
+
+              <div className="del-card__divider" />
+
+              {/* Product info */}
+              <div className="del-card__section">
+                <div className="del-card__section-label">ข้อมูลสินค้า</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {(o.items?.length ?? 0) > 0 ? (
+                    o.items!.map((item) => {
+                      const photos = item.deskPhotos || [];
+                      return (
+                        <div key={item.id} className="del-card__item-row">
+                          <div className="del-card__item-name">
+                            <Table2 size={15} strokeWidth={2} style={{ color: "#64748b", flexShrink: 0 }} aria-hidden />
+                            {item.type} x {item.qty}
                           </div>
-                        );
-                      })}
+                          {photos.length > 0 ? (
+                            <button type="button" className="del-card__photo-btn" onClick={() => setLightbox({ images: photos, index: 0 })}>
+                              ดูรูปโต๊ะ ({photos.length})
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="del-card__item-row">
+                      <div className="del-card__item-name">
+                        <Table2 size={15} strokeWidth={2} style={{ color: "#64748b", flexShrink: 0 }} aria-hidden />
+                        {o.productName || "—"}
+                      </div>
+                      {(o.deskPhotos?.length ?? 0) > 0 ? (
+                        <button type="button" className="del-card__photo-btn" onClick={() => setLightbox({ images: o.deskPhotos!, index: 0 })}>
+                          ดูรูปโต๊ะ ({o.deskPhotos!.length})
+                        </button>
+                      ) : null}
                     </div>
-                  </div>
-                ) : (o.deskPhotos?.length ?? 0) > 0 ? (
-                  <div>
-                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--muted)", marginBottom: 6 }}>
-                      รูปโต๊ะ
-                    </div>
-                    <button
-                      type="button"
-                      className="sale-slip-link sale-slip-link--staff"
-                      onClick={() => setLightbox({ images: o.deskPhotos || [], index: 0 })}
-                    >
-                      ดูรูปโต๊ะ ({o.deskPhotos!.length})
-                    </button>
-                  </div>
-                ) : null}
+                  )}
+                </div>
               </div>
-              <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  className="btnok"
-                  disabled={completingId === o.id}
-                  onClick={() => openProofDialog(o.id)}
-                >
-                  <Camera size={18} strokeWidth={2} aria-hidden />
-                  {completingId === o.id ? "กำลังบันทึก..." : "จัดส่งสำเร็จ"}
-                </button>
-              </div>
+
+              {/* Complete button — full width, flush to card bottom */}
+              <button
+                type="button"
+                className="del-card__complete-btn"
+                disabled={completingId === o.id}
+                onClick={() => openProofDialog(o.id)}
+              >
+                <Camera size={18} strokeWidth={2} aria-hidden />
+                {completingId === o.id ? "กำลังบันทึก..." : "จัดส่งสำเร็จ"}
+              </button>
             </article>
           ))}
         </div>

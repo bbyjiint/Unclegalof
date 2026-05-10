@@ -48,6 +48,11 @@ enum PipelinePriority {
   low
 }
 
+enum CostStatus {
+  confirmed
+  pending_owner_review
+}
+
 enum StoredFilePurpose {
   PAYMENT_SLIP
   REPAIR_IMAGE
@@ -187,11 +192,15 @@ model SalesOrderLine {
   grossProfit         Int          @default(0)
   /// ค่ายก/แบกของพนักงานต่อบรรทัด (unit lift fee × quantity).
   workerLiftFee       Int          @default(0)
+  /// confirmed = FIFO cost fully known; pending_owner_review = one or more consumed lots had costPerUnit=0 at sale time.
+  costStatus          CostStatus   @default(confirmed)
   deskItem            DeskItem     @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   salesOrder          SalesOrder   @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  consumedLots        SalesOrderLineConsumedLot[]
 
   @@index([salesOrderId])
   @@index([deskItemId])
+  @@index([costStatus])
   @@unique([salesOrderId, lineNumber])
 }
 
@@ -217,6 +226,8 @@ model SaleRecord {
   cogsTotal            Int                    @default(0)
   /// (amount - workerFee) - cogsTotal — product gross profit snapshot.
   grossProfit          Int                    @default(0)
+  /// confirmed = FIFO cost fully known; pending_owner_review = one or more consumed lots had costPerUnit=0 at sale time.
+  costStatus           CostStatus             @default(confirmed)
   deliveryType         DeliveryMethod         @default(selfpickup)
   /// Set when driver marks home delivery as done (hidden from pending delivery queue).
   deliveryCompletedAt  DateTime?
@@ -247,6 +258,8 @@ model SaleRecord {
   salesOrder           SalesOrder?            @relation("SalesOrderSaleRecords", fields: [salesOrderId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   commissions          SaleRecordCommission[]
   tenantOwner          User                   @relation("SaleTenant", fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  /// FIFO lot consumption records for retroactive COGS recalculation.
+  consumedLots         SalesOrderLineConsumedLot[]
 
   @@index([ownerId])
   @@index([saleDate])
@@ -256,6 +269,7 @@ model SaleRecord {
   @@index([createdByUserId])
   @@index([paymentBatchId])
   @@index([salesOrderId])
+  @@index([costStatus])
 }
 
 model PaymentBatch {
@@ -275,7 +289,7 @@ model PaymentBatch {
   @@index([createdByUserId])
 }
 
-/// Sample of ต้นทุน/หน่วย each time stock is received (batch). Average of these = sale COGS basis.
+/// Sample of ต้นทุน/หน่วย each time stock is received (batch). Average of these = sale COGS basis (display/reporting only).
 model DeskItemCostLog {
   id          String   @id @default(uuid()) @db.Uuid
   deskItemId  String   @db.Uuid
@@ -284,6 +298,26 @@ model DeskItemCostLog {
   deskItem    DeskItem @relation(fields: [deskItemId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([deskItemId])
+}
+
+/// Per-lot FIFO consumption for each SalesOrderLine — enables retroactive COGS recalculation when lot cost is set later.
+model SalesOrderLineConsumedLot {
+  id                String          @id @default(uuid()) @db.Uuid
+  salesOrderLineId  String          @db.Uuid
+  saleRecordId      String          @db.Uuid
+  /// Null when stock was sold but no lot existed (unallocated shortage — cost permanently unknown).
+  inventoryLotId    String?         @db.Uuid
+  consumedQty       Int
+  /// Snapshot of costPerUnit at sale time; updated automatically when owner patches lot cost.
+  costPerUnitAtSale Int             @default(0)
+  createdAt         DateTime        @default(now())
+  salesOrderLine    SalesOrderLine  @relation(fields: [salesOrderLineId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  saleRecord        SaleRecord      @relation(fields: [saleRecordId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  inventoryLot      InventoryLot?   @relation(fields: [inventoryLotId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([salesOrderLineId])
+  @@index([saleRecordId])
+  @@index([inventoryLotId])
 }
 
 model RepairRecord {
@@ -356,6 +390,7 @@ model InventoryLot {
   updatedAt      DateTime @updatedAt
   deskItem       DeskItem @relation(fields: [deskItemId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   movements      InventoryMovement[]
+  saleConsumedLots SalesOrderLineConsumedLot[]
 
   @@index([deskItemId])
   @@index([createdAt])

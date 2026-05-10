@@ -50,14 +50,36 @@ router.get(
       const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
 
       // Monthly totals for the selected month/year — same date window as the sales list above.
-      const [aggResult, legacyRows] = await Promise.all([
+      const [allIncomeAgg, confirmedAgg, pendingCostRecords, legacyRows] = await Promise.all([
+        // Total revenue — all sales regardless of cost status.
         prisma.saleRecord.aggregate({
           where: { saleDate: { gte: start, lt: end } },
+          _sum: { amount: true },
+        }),
+        // Confirmed-cost records only — used for profit/margin so pending cost does not inflate profit.
+        prisma.saleRecord.aggregate({
+          where: { saleDate: { gte: start, lt: end }, costStatus: "confirmed" },
           _sum: { amount: true, cogsTotal: true },
         }),
+        // Pending-cost records — returned in full so the owner can see exactly which lines need attention.
+        prisma.saleRecord.findMany({
+          where: { saleDate: { gte: start, lt: end }, costStatus: "pending_owner_review" },
+          select: {
+            id: true,
+            orderNumber: true,
+            quantity: true,
+            amount: true,
+            saleDate: true,
+            deskItem: { select: { name: true } },
+            salesOrder: { select: { orderNumber: true } },
+          },
+          orderBy: [{ saleDate: "asc" }, { createdAt: "asc" }],
+        }),
+        // Legacy rows: confirmed but cogsTotal=0 yet have avgUnitCostSnapshot (pre-FIFO orders).
         prisma.saleRecord.findMany({
           where: {
             saleDate: { gte: start, lt: end },
+            costStatus: "confirmed",
             cogsTotal: { lte: 0 },
             avgUnitCostSnapshot: { gt: 0 },
           },
@@ -65,14 +87,58 @@ router.get(
         }),
       ]);
 
-      const income = Number(aggResult._sum.amount ?? 0);
-      let cogsFromSales = Number(aggResult._sum.cogsTotal ?? 0);
+      const income = Number(allIncomeAgg._sum.amount ?? 0);
+      const confirmedIncome = Number(confirmedAgg._sum.amount ?? 0);
+      let cogsFromSales = Number(confirmedAgg._sum.cogsTotal ?? 0);
       for (const r of legacyRows) {
         cogsFromSales += Number(r.avgUnitCostSnapshot) * Number(r.quantity ?? 0);
       }
       const cost = cogsFromSales;
-      const profit = income - cost;
-      const margin = income > 0 ? Math.round((profit / income) * 1000) / 10 : 0;
+      const profit = confirmedIncome - cost;
+      const margin = confirmedIncome > 0 ? Math.round((profit / confirmedIncome) * 1000) / 10 : 0;
+      const pendingCostLineCount = pendingCostRecords.length;
+      const pendingCostRevenue = pendingCostRecords.reduce((s, r) => s + Number(r.amount), 0);
+
+      // For each pending line, fetch the individual consumed lots that still have zero cost
+      // so the owner can see exactly which lot dates to fill in — not just a count.
+      const pendingConsumedLots =
+        pendingCostRecords.length > 0
+          ? await prisma.salesOrderLineConsumedLot.findMany({
+              where: {
+                saleRecordId: { in: pendingCostRecords.map((r) => r.id) },
+                costPerUnitAtSale: 0,
+              },
+              select: {
+                saleRecordId: true,
+                consumedQty: true,
+                inventoryLotId: true,
+                inventoryLot: { select: { createdAt: true } },
+              },
+              orderBy: { createdAt: "asc" },
+            })
+          : [];
+
+      const pendingLotsBySaleRecord = new Map();
+      for (const cl of pendingConsumedLots) {
+        if (!pendingLotsBySaleRecord.has(cl.saleRecordId)) {
+          pendingLotsBySaleRecord.set(cl.saleRecordId, []);
+        }
+        pendingLotsBySaleRecord.get(cl.saleRecordId).push({
+          consumedQty: cl.consumedQty,
+          // null = unallocated shortage — cost can never be recovered from a lot
+          receivedAt: cl.inventoryLot?.createdAt?.toISOString() ?? null,
+        });
+      }
+
+      const pendingCostOrders = pendingCostRecords.map((r) => ({
+        id: r.id,
+        orderNumber: r.salesOrder?.orderNumber ?? r.orderNumber.replace(/-L\d+$/, ""),
+        productName: r.deskItem?.name ?? "",
+        qty: r.quantity,
+        amount: Number(r.amount),
+        saleDate: r.saleDate.toISOString(),
+        pendingLots: pendingLotsBySaleRecord.get(r.id) ?? [],
+      }));
 
       const costPositions = await getAllCostPositionsForOwner(prisma);
 
@@ -83,7 +149,10 @@ router.get(
           cogsFromSales,
           profit,
           margin,
+          pendingCostLineCount,
+          pendingCostRevenue,
         },
+        pendingCostOrders,
         costPositions,
         promotions: promotionsFrontend,
         sales,

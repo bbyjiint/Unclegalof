@@ -495,3 +495,167 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ── Purchasing lot cards ───────────────────────────────────── */
+.purch-lot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.purch-lot-card {
+  border-radius: 12px;
+  border: 1px solid #e8e8ec;
+  background: #fff;
+  overflow: hidden;
+}
+
+/* Top section: date+product | qty | remaining | (cost on desktop) */
+.purch-lot-card__top {
+  display: grid;
+  grid-template-columns: 1fr 68px 68px;
+  align-items: center;
+  gap: 0 6px;
+  padding: 12px 14px 10px;
+}
+
+.purch-lot-card__col-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.purch-lot-card__date {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.purch-lot-card__product {
+  font-family: "Prompt", sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.purch-lot-card__note {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 3px;
+}
+
+.purch-lot-card__num-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.purch-lot-card__num {
+  font-family: "Prompt", sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--green);
+  line-height: 1;
+}
+
+/* Cost column — shown on desktop only */
+.purch-lot-card__cost-col {
+  display: none;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* Cost row — mobile only, full-width, separated */
+.purch-lot-card__cost-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.purch-lot-card__cost-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.purch-lot-card__cost-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.purch-lot-card__cost-val {
+  font-family: "Prompt", sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.purch-lot-card__cost-input {
+  width: 100px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid #d8d8dc;
+  font-size: 14px;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.purch-lot-card__save-btn {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--green);
+  color: #fff;
+  font-family: "Prompt", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.purch-lot-card__save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Desktop: switch to 4-column layout, hide the mobile cost row */
+@media (min-width: 760px) {
+  .purch-lot-card__top {
+    grid-template-columns: 1fr 80px 80px minmax(160px, auto);
+    gap: 0 12px;
+    padding: 14px 16px;
+    align-items: center;
+  }
+
+  .purch-lot-card__cost-col {
+    display: flex;
+  }
+
+  .purch-lot-card__cost-row {
+    display: none;
+  }
+
+  .purch-lot-card__cost-col .purch-lot-card__cost-right {
+    justify-content: flex-end;
+  }
+
+  .purch-lot-card__cost-input {
+    width: 110px;
+  }
+
+  .purch-lot-card__num {
+    font-size: 24px;
+  }
+}

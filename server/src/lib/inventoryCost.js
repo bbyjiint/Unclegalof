@@ -20,7 +20,8 @@ export async function getAverageRecordedCost(prisma, deskItemId) {
 }
 
 /**
- * Owner dashboard: คงคลัง from lots + ต้นทุนเฉลี่ยจาก mean(บันทึกรับของ).
+ * Owner dashboard: all active lots per product in FIFO order (oldest first).
+ * Returns raw lot-level data — no averaging, no aggregation.
  * @param {import('@prisma/client').PrismaClient} prisma
  */
 export async function getAllCostPositionsForOwner(prisma) {
@@ -28,36 +29,48 @@ export async function getAllCostPositionsForOwner(prisma) {
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });
+
+  // Fetch all lots with remaining stock, oldest first (= FIFO consumption order).
   const lots = await prisma.inventoryLot.findMany({
     where: { remainingQty: { gt: 0 } },
-    select: { deskItemId: true, remainingQty: true },
+    select: {
+      id: true,
+      deskItemId: true,
+      remainingQty: true,
+      costPerUnit: true,
+      createdAt: true,
+      note: true,
+    },
+    orderBy: [{ deskItemId: "asc" }, { createdAt: "asc" }],
   });
-  const onHandByDesk = new Map();
-  for (const l of lots) {
-    onHandByDesk.set(l.deskItemId, (onHandByDesk.get(l.deskItemId) ?? 0) + l.remainingQty);
+
+  const lotsByDesk = new Map();
+  for (const lot of lots) {
+    if (!lotsByDesk.has(lot.deskItemId)) {
+      lotsByDesk.set(lot.deskItemId, []);
+    }
+    lotsByDesk.get(lot.deskItemId).push({
+      id: lot.id,
+      remainingQty: lot.remainingQty,
+      costPerUnit: lot.costPerUnit,
+      totalValue: lot.remainingQty * lot.costPerUnit,
+      receivedAt: lot.createdAt.toISOString(),
+      note: lot.note ?? null,
+    });
   }
-  const logAggs = await prisma.deskItemCostLog.groupBy({
-    by: ["deskItemId"],
-    _avg: { costPerUnit: true },
-    _count: { _all: true },
-  });
-  const logByDesk = new Map(
-    logAggs.map((row) => [
-      row.deskItemId,
-      {
-        avgUnitCost: row._avg.costPerUnit != null ? Math.round(row._avg.costPerUnit) : null,
-        costSampleCount: row._count._all,
-      },
-    ])
-  );
+
   return deskItems.map((d) => {
-    const log = logByDesk.get(d.id);
+    const productLots = lotsByDesk.get(d.id) ?? [];
+    const onHandQty = productLots.reduce((s, l) => s + l.remainingQty, 0);
+    const pendingQty = productLots
+      .filter((l) => l.costPerUnit === 0)
+      .reduce((s, l) => s + l.remainingQty, 0);
     return {
       deskItemId: d.id,
       name: d.name,
-      onHandQty: onHandByDesk.get(d.id) ?? 0,
-      avgUnitCost: log?.avgUnitCost ?? null,
-      costSampleCount: log?.costSampleCount ?? 0,
+      onHandQty,
+      pendingQty,
+      lots: productLots,
     };
   });
 }

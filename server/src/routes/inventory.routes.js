@@ -270,8 +270,34 @@ router.get(
       });
 
       const includeCost = req.role === UserRole.OWNER;
+
+      // For owner: count how many consumed-lot records per lot still have costPerUnitAtSale = 0
+      // (i.e. this lot is directly causing pending-cost order lines)
+      const pendingCountMap = new Map();
+      if (includeCost && lots.length > 0) {
+        const pendingCounts = await prisma.salesOrderLineConsumedLot.groupBy({
+          by: ["inventoryLotId"],
+          where: {
+            inventoryLotId: { in: lots.map((l) => l.id) },
+            costPerUnitAtSale: 0,
+          },
+          _count: { _all: true },
+        });
+        for (const row of pendingCounts) {
+          if (row.inventoryLotId) {
+            pendingCountMap.set(row.inventoryLotId, row._count._all);
+          }
+        }
+      }
+
       res.json({
-        items: lots.map((lot) => lotToFrontend(lot, includeCost)),
+        items: lots.map((lot) => {
+          const row = lotToFrontend(lot, includeCost);
+          if (includeCost) {
+            row.pendingOrderCount = pendingCountMap.get(lot.id) ?? 0;
+          }
+          return row;
+        }),
       });
     } catch (error) {
       next(error);
@@ -707,6 +733,8 @@ router.patch(
           data: { costPerUnit },
           include: { deskItem: true },
         });
+
+        // Maintain DeskItemCostLog for display/reporting (average cost overview).
         if (prevCost === 0 && costPerUnit > 0) {
           await tx.deskItemCostLog.create({
             data: {
@@ -715,6 +743,72 @@ router.patch(
             },
           });
         }
+
+        // Retroactively recalculate COGS for every sale line that consumed this lot.
+        const consumedRecords = await tx.salesOrderLineConsumedLot.findMany({
+          where: { inventoryLotId: id },
+          select: { salesOrderLineId: true, saleRecordId: true },
+        });
+
+        if (consumedRecords.length > 0) {
+          // Propagate the new cost to all consumed-lot snapshots referencing this lot.
+          await tx.salesOrderLineConsumedLot.updateMany({
+            where: { inventoryLotId: id },
+            data: { costPerUnitAtSale: costPerUnit },
+          });
+
+          const uniqueLineIds = [...new Set(consumedRecords.map((r) => r.salesOrderLineId))];
+
+          for (const lineId of uniqueLineIds) {
+            const [orderLine, allConsumedForLine] = await Promise.all([
+              tx.salesOrderLine.findUnique({ where: { id: lineId } }),
+              tx.salesOrderLineConsumedLot.findMany({ where: { salesOrderLineId: lineId } }),
+            ]);
+
+            if (!orderLine) continue;
+
+            // Recompute COGS from all consumed lots for this line (costPerUnitAtSale already updated above).
+            const newCogsTotal = allConsumedForLine.reduce(
+              (sum, cl) => sum + cl.consumedQty * cl.costPerUnitAtSale,
+              0
+            );
+            const newAvgUnitCost =
+              orderLine.quantity > 0 ? Math.round(newCogsTotal / orderLine.quantity) : 0;
+            const stillPending = allConsumedForLine.some((cl) => cl.costPerUnitAtSale === 0);
+            const newCostStatus = stillPending ? "pending_owner_review" : "confirmed";
+            // grossProfit = (unitPrice × qty − discounts) − COGS
+            const baseRevenue =
+              orderLine.unitPrice * orderLine.quantity -
+              orderLine.promoDiscount -
+              orderLine.manualDiscount;
+            const newGrossProfit = baseRevenue - newCogsTotal;
+
+            await tx.salesOrderLine.update({
+              where: { id: lineId },
+              data: {
+                cogsTotal: newCogsTotal,
+                avgUnitCostSnapshot: newAvgUnitCost,
+                grossProfit: newGrossProfit,
+                costStatus: newCostStatus,
+              },
+            });
+
+            // Mirror update on the corresponding SaleRecord.
+            const saleRecordId = consumedRecords.find((r) => r.salesOrderLineId === lineId)?.saleRecordId;
+            if (saleRecordId) {
+              await tx.saleRecord.update({
+                where: { id: saleRecordId },
+                data: {
+                  cogsTotal: newCogsTotal,
+                  avgUnitCostSnapshot: newAvgUnitCost,
+                  grossProfit: newGrossProfit,
+                  costStatus: newCostStatus,
+                },
+              });
+            }
+          }
+        }
+
         return row;
       });
 

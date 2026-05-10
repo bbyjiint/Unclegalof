@@ -586,24 +586,7 @@ router.post(
 
       const uniqueDeskItemIds = [...new Set(resolvedLines.map((line) => line.deskItem.id))];
 
-      // Single groupBy instead of D sequential aggregate queries
-      const costLogAggs = await prisma.deskItemCostLog.groupBy({
-        by: ["deskItemId"],
-        where: { deskItemId: { in: uniqueDeskItemIds } },
-        _avg: { costPerUnit: true },
-        _count: { _all: true },
-      });
-      const avgCostByDeskItemId = new Map(
-        costLogAggs
-          .filter((row) => row._count._all > 0 && row._avg.costPerUnit != null)
-          .map((row) => [row.deskItemId, Math.round(row._avg.costPerUnit)])
-      );
-      for (const id of uniqueDeskItemIds) {
-        if (!avgCostByDeskItemId.has(id)) {
-          avgCostByDeskItemId.set(id, 0);
-        }
-      }
-
+      // Load available lots ordered oldest-first for FIFO consumption; costPerUnit included for COGS.
       const sourceLots = await prisma.inventoryLot.findMany({
         where: {
           deskItemId: { in: uniqueDeskItemIds },
@@ -618,6 +601,7 @@ router.post(
         rows.push({
           id: lot.id,
           remainingQty: lot.remainingQty,
+          costPerUnit: lot.costPerUnit,
         });
         sourceLotsByDeskItemId.set(lot.deskItemId, rows);
       }
@@ -663,71 +647,24 @@ router.post(
           const workerFee = feeShares[index] || 0;
           const lineSubtotal = line.baseAmount;
           const lineAmount = Math.max(0, lineSubtotal - promoDiscount - manualDiscount + workerFee);
-          const avgUnitCostSnapshot = avgCostByDeskItemId.get(line.deskItem.id) ?? 0;
-          const cogsTotal = avgUnitCostSnapshot * line.qty;
-          const grossProfit = lineAmount - workerFee - cogsTotal;
           const workerLiftFee = lineLiftFees[index] || 0;
           const lineNumber = index + 1;
 
-          await tx.salesOrderLine.create({
-            data: {
-              salesOrderId: salesOrder.id,
-              lineNumber,
-              deskItemId: line.deskItem.id,
-              quantity: line.qty,
-              unitPrice: line.price,
-              promoDiscount,
-              manualDiscount,
-              amount: lineAmount,
-              deskPhotos: line.deskPhotos || [],
-              avgUnitCostSnapshot,
-              cogsTotal,
-              grossProfit,
-              workerLiftFee,
-            },
-          });
-
-          const created = await tx.saleRecord.create({
-            data: {
-              ownerId: companyOwnerId,
-              saleDate,
-              orderNumber: buildLineOrderNumber(publicOrderNumber, lineNumber),
-              deskType: line.deskItem.id,
-              quantity: line.qty,
-              unitPrice: line.price,
-              promoDiscount,
-              manualDiscount,
-              manualDiscountReason: payload.manualReason || null,
-              status: payload.pay,
-              appliedPromotion: payload.promoId || null,
-              amount: lineAmount,
-              avgUnitCostSnapshot,
-              cogsTotal,
-              grossProfit,
-              deliveryType: payload.delivery,
-              deliveryRange,
-              workerFee,
-              workerFeeType: payload.wType || null,
-              workerLiftFee,
-              customerName: payload.addr || null,
-              customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
-              deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
-              remarks: payload.note || null,
-              deskPhotos: line.deskPhotos || [],
-              paidAt: payload.pay === "paid" ? new Date() : null,
-              createdByUserId: req.user.id,
-              salesOrderId: salesOrder.id,
-            },
-            include: saleRecordFrontendInclude,
-          });
-
+          // Step 1: FIFO lot consumption — update remainingQty, create OUT movements, track each consumed lot.
           let remainingToConsume = line.qty;
           const sourceLotsForDeskItem = sourceLotsByDeskItemId.get(line.deskItem.id) || [];
+          const consumedLotEntries = [];
 
           for (const lot of sourceLotsForDeskItem) {
             if (remainingToConsume <= 0) break;
             const takeQty = Math.min(lot.remainingQty, remainingToConsume);
             if (takeQty <= 0) continue;
+
+            consumedLotEntries.push({
+              inventoryLotId: lot.id,
+              consumedQty: takeQty,
+              costPerUnitAtSale: lot.costPerUnit,
+            });
 
             await tx.inventoryLot.update({
               where: { id: lot.id },
@@ -750,6 +687,12 @@ router.post(
           }
 
           if (remainingToConsume > 0) {
+            // Unallocated — no lot to link; cost is unknown and cannot be recovered later.
+            consumedLotEntries.push({
+              inventoryLotId: null,
+              consumedQty: remainingToConsume,
+              costPerUnitAtSale: 0,
+            });
             await tx.inventoryMovement.create({
               data: {
                 deskItemId: line.deskItem.id,
@@ -762,6 +705,86 @@ router.post(
             });
           }
 
+          // Step 2: Compute true FIFO COGS from consumed lot costs.
+          const cogsTotal = consumedLotEntries.reduce(
+            (sum, e) => sum + e.consumedQty * e.costPerUnitAtSale,
+            0
+          );
+          const avgUnitCostSnapshot = line.qty > 0 ? Math.round(cogsTotal / line.qty) : 0;
+          const hasMissingCost = consumedLotEntries.some((e) => e.costPerUnitAtSale === 0);
+          const costStatus = hasMissingCost ? "pending_owner_review" : "confirmed";
+          const grossProfit = lineAmount - workerFee - cogsTotal;
+
+          // Step 3: Create SalesOrderLine — needs to exist before consumed-lot records (FK).
+          const orderLine = await tx.salesOrderLine.create({
+            data: {
+              salesOrderId: salesOrder.id,
+              lineNumber,
+              deskItemId: line.deskItem.id,
+              quantity: line.qty,
+              unitPrice: line.price,
+              promoDiscount,
+              manualDiscount,
+              amount: lineAmount,
+              deskPhotos: line.deskPhotos || [],
+              avgUnitCostSnapshot,
+              cogsTotal,
+              grossProfit,
+              costStatus,
+              workerLiftFee,
+            },
+          });
+
+          // Step 4: Create SaleRecord.
+          const created = await tx.saleRecord.create({
+            data: {
+              ownerId: companyOwnerId,
+              saleDate,
+              orderNumber: buildLineOrderNumber(publicOrderNumber, lineNumber),
+              deskType: line.deskItem.id,
+              quantity: line.qty,
+              unitPrice: line.price,
+              promoDiscount,
+              manualDiscount,
+              manualDiscountReason: payload.manualReason || null,
+              status: payload.pay,
+              appliedPromotion: payload.promoId || null,
+              amount: lineAmount,
+              avgUnitCostSnapshot,
+              cogsTotal,
+              grossProfit,
+              costStatus,
+              deliveryType: payload.delivery,
+              deliveryRange,
+              workerFee,
+              workerFeeType: payload.wType || null,
+              workerLiftFee,
+              customerName: payload.addr || null,
+              customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
+              deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
+              remarks: payload.note || null,
+              deskPhotos: line.deskPhotos || [],
+              paidAt: payload.pay === "paid" ? new Date() : null,
+              createdByUserId: req.user.id,
+              salesOrderId: salesOrder.id,
+            },
+            include: saleRecordFrontendInclude,
+          });
+
+          // Step 5: Persist consumed-lot records — enables owner to patch lot cost and auto-recalculate.
+          for (const entry of consumedLotEntries) {
+            await tx.salesOrderLineConsumedLot.create({
+              data: {
+                salesOrderLineId: orderLine.id,
+                saleRecordId: created.id,
+                inventoryLotId: entry.inventoryLotId,
+                consumedQty: entry.consumedQty,
+                costPerUnitAtSale: entry.costPerUnitAtSale,
+              },
+            });
+          }
+
+          // Step 6: Commission (SALES role only).
           if (req.role === UserRole.SALES) {
             const commBaht = commissionBahtForLine(priorUnits, line.qty);
             if (commBaht > 0) {

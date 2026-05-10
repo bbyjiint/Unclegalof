@@ -102,6 +102,9 @@ export function saleGroupToFrontendSale(group, options = {}) {
       : rows.reduce((sum, row) => sum + normalizedLineGrandTotal(row), 0);
   const totalCogs = rows.reduce((sum, row) => sum + Number(row.cogsTotal || 0), 0);
   const totalGrossProfit = rows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0);
+  const orderCostStatus = rows.some((row) => row.costStatus === "pending_owner_review")
+    ? "pending_owner_review"
+    : "confirmed";
   const deskPhotos = uniquePhotoUrls(
     order?.deskPhotos,
     ...rows.map((row) => row.deskPhotos),
@@ -164,6 +167,7 @@ export function saleGroupToFrontendSale(group, options = {}) {
     base.avgUnitCost = qty > 0 ? Math.round(totalCogs / qty) : 0;
     base.cogsTotal = totalCogs;
     base.grossProfit = totalGrossProfit;
+    base.costStatus = orderCostStatus;
   }
 
   return base;

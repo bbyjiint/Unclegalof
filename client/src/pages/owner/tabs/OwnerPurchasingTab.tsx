@@ -89,76 +89,92 @@ export default function OwnerPurchasingTab() {
           <p style={{ margin: 0, textAlign: "center", color: "#636366" }}>ยังไม่มีรอบรับของ</p>
         </div>
       ) : (
-        <div className="tbl-wrap" style={{ overflowX: "auto" }}>
-          <table>
-            <thead>
-              <tr>
-                <th>วันที่รับ</th>
-                <th>สินค้า</th>
-                <th>จำนวนรับ</th>
-                <th>คงเหลือ</th>
-                <th>ต้นทุน / ชิ้น</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lots.map((lot) => {
-                const hasCost = (lot.costPerUnit ?? 0) > 0;
-                return (
-                  <tr key={lot.id}>
-                    <td style={{ whiteSpace: "nowrap", fontSize: 13 }}>
-                      {lot.createdAt
-                        ? new Date(lot.createdAt).toLocaleString("th-TH", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })
-                        : "—"}
-                    </td>
-                    <td>
-                      {lot.productName}
-                      {lot.note ? (
-                        <div className="csub" style={{ fontSize: 11, color: "#636366" }}>
-                          {lot.note}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>{lot.qty}</td>
-                    <td>{lot.remainingQty}</td>
-                    <td>
-                      {hasCost ? (
-                        <span style={{ fontWeight: 600 }}>{formatMoney(lot.costPerUnit ?? 0)}</span>
-                      ) : (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                          <input
-                            type="number"
-                            min={0}
-                            style={{ width: 100, padding: "6px 8px", borderRadius: 8, border: "1px solid #c7c7cc" }}
-                            placeholder="บาท/ชิ้น"
-                            value={costDrafts[lot.id] ?? ""}
-                            onChange={(e) =>
-                              setCostDrafts((d) => ({
-                                ...d,
-                                [lot.id]: e.target.value,
-                              }))
-                            }
-                            aria-label={`ต้นทุน ${lot.productName}`}
-                          />
-                          <button
-                            type="button"
-                            className="btnok"
-                            style={{ padding: "6px 12px", fontSize: 13 }}
-                            disabled={savingLotId === lot.id}
-                            onClick={() => void saveLotCost(lot.id)}
-                          >
-                            {savingLotId === lot.id ? "…" : "บันทึก"}
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="purch-lot-list">
+          {lots.map((lot) => {
+            const hasCost = (lot.costPerUnit ?? 0) > 0;
+            const dateStr = lot.createdAt
+              ? new Date(lot.createdAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })
+              : "—";
+            const costContent = hasCost ? (
+              <span className="purch-lot-card__cost-val">{formatMoney(lot.costPerUnit ?? 0)}</span>
+            ) : (
+              <>
+                <input
+                  type="number"
+                  min={0}
+                  className="purch-lot-card__cost-input"
+                  placeholder="บาท/ชิ้น"
+                  value={costDrafts[lot.id] ?? ""}
+                  onChange={(e) => setCostDrafts((d) => ({ ...d, [lot.id]: e.target.value }))}
+                  aria-label={`ต้นทุน ${lot.productName}`}
+                />
+                <button
+                  type="button"
+                  className="purch-lot-card__save-btn"
+                  disabled={savingLotId === lot.id}
+                  onClick={() => void saveLotCost(lot.id)}
+                >
+                  {savingLotId === lot.id ? "…" : "บันทึก"}
+                </button>
+              </>
+            );
+
+            const pendingCount = lot.pendingOrderCount ?? 0;
+
+            return (
+              <div key={lot.id} className="purch-lot-card">
+                {/* Top: 3-col mobile / 4-col desktop */}
+                <div className="purch-lot-card__top">
+                  <div>
+                    <div className="purch-lot-card__date">{dateStr}</div>
+                    <div className="purch-lot-card__product">{lot.productName}</div>
+                    {lot.note ? <div className="purch-lot-card__note">{lot.note}</div> : null}
+                  </div>
+                  <div className="purch-lot-card__num-col">
+                    <div className="purch-lot-card__col-label">จำนวนรับ</div>
+                    <div className="purch-lot-card__num">{lot.qty}</div>
+                  </div>
+                  <div className="purch-lot-card__num-col">
+                    <div className="purch-lot-card__col-label">คงเหลือ</div>
+                    <div className="purch-lot-card__num">{lot.remainingQty}</div>
+                  </div>
+                  {/* 4th column — desktop only (CSS hides on mobile) */}
+                  <div className="purch-lot-card__cost-col">
+                    <div className="purch-lot-card__col-label" style={{ textAlign: "right" }}>ต้นทุน/ชิ้น</div>
+                    <div className="purch-lot-card__cost-right">{costContent}</div>
+                  </div>
+                </div>
+
+                {/* Cost row — mobile only (CSS hides on desktop) */}
+                <div className="purch-lot-card__cost-row">
+                  <div className="purch-lot-card__cost-label">ต้นทุน / ชิ้น</div>
+                  <div className="purch-lot-card__cost-right">{costContent}</div>
+                </div>
+
+                {/* Pending-cost alert — shown when this lot is causing unfinalised profit lines */}
+                {pendingCount > 0 && (
+                  <div
+                    style={{
+                      borderTop: "1px solid #fde68a",
+                      background: "#fffbeb",
+                      padding: "6px 12px",
+                      fontSize: 12,
+                      color: "#92400e",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <span aria-hidden>⚠️</span>
+                    <span>
+                      <strong>{pendingCount} ออเดอร์</strong>
+                      {" "}รอต้นทุนจากล็อตนี้ — กรอกต้นทุนเพื่อให้กำไรคำนวณอัตโนมัติ
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
