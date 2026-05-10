@@ -200,9 +200,9 @@ export default function RepairPage() {
   }
 
   return (
-    <main className="wrap">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <div className="h-with-icon" style={{ fontFamily: "Prompt", fontSize: 17, fontWeight: 700, color: "var(--dark)" }}>
+    <main className="wrap repair-page">
+      <div className="repair-page__head">
+        <div className="h-with-icon repair-page__title">
           <Wrench size={22} strokeWidth={2} aria-hidden />
           สินค้ารอซ่อม / เคลม
         </div>
@@ -266,31 +266,14 @@ export default function RepairPage() {
               disabled={newRepairPhotos.length >= MAX_REPAIR_PHOTOS}
             />
             {newRepairPhotos.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+              <div className="repair-page__photo-strip">
                 {newRepairPhotos.map((row, index) => (
-                  <div key={`${row.file.name}-${index}`} style={{ position: "relative" }}>
-                    <img
-                      src={row.url}
-                      alt=""
-                      style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, display: "block" }}
-                    />
+                  <div key={`${row.file.name}-${index}`} className="repair-page__photo-wrap">
+                    <img src={row.url} alt="" className="repair-page__photo-thumb" />
                     <button
                       type="button"
+                      className="repair-page__photo-remove"
                       onClick={() => removeNewRepairPhoto(index)}
-                      style={{
-                        position: "absolute",
-                        top: -6,
-                        right: -6,
-                        width: 22,
-                        height: 22,
-                        borderRadius: "50%",
-                        border: "none",
-                        background: "var(--dark)",
-                        color: "#fff",
-                        fontSize: 12,
-                        cursor: "pointer",
-                        lineHeight: 1
-                      }}
                       aria-label="ลบรูป"
                     >
                       <X size={14} strokeWidth={2.5} aria-hidden />
@@ -302,7 +285,7 @@ export default function RepairPage() {
           </div>
         </div>
         {productTypes.length === 0 && (
-          <p style={{ marginBottom: 12, color: "var(--dark)", opacity: 0.85 }}>
+          <p className="repair-page__form-note">
             ยังไม่มีประเภทสินค้าในระบบ — เพิ่มสินค้าที่หน้าคลังก่อนจึงจะบันทึกแจ้งซ่อมได้
           </p>
         )}
@@ -343,36 +326,19 @@ export default function RepairPage() {
                 </span>
                 <span>{item.status}</span>
               </div>
-              <p style={{ marginTop: 10 }}>{item.reason}</p>
+              <p className="repair-page__reason">{item.reason}</p>
               {(item.images?.length ?? 0) > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+                <div className="repair-page__photo-strip repair-page__photo-strip--listed">
                   {item.images!.map((src, idx) => (
-                    <div key={`${item.id}-img-${idx}`} style={{ position: "relative" }}>
+                    <div key={`${item.id}-img-${idx}`} className="repair-page__photo-wrap">
                       <a href={src} target="_blank" rel="noreferrer">
-                        <img
-                          src={src}
-                          alt={`รูป ${idx + 1}`}
-                          style={{ width: 88, height: 88, objectFit: "cover", borderRadius: 8, display: "block" }}
-                        />
+                        <img src={src} alt={`รูป ${idx + 1}`} className="repair-page__photo-thumb repair-page__photo-thumb--listed" />
                       </a>
                       <button
                         type="button"
+                        className="repair-page__photo-remove"
                         onClick={() => {
                           void removeRepairPhoto(item.id, src);
-                        }}
-                        style={{
-                          position: "absolute",
-                          top: -6,
-                          right: -6,
-                          width: 22,
-                          height: 22,
-                          borderRadius: "50%",
-                          border: "none",
-                          background: "var(--dark)",
-                          color: "#fff",
-                          fontSize: 12,
-                          cursor: "pointer",
-                          lineHeight: 1,
                         }}
                         aria-label="ลบรูปนี้"
                         disabled={uploadingRepairId === item.id}
@@ -383,7 +349,7 @@ export default function RepairPage() {
                   ))}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <div className="repair-page__item-actions">
                 <input
                   ref={(node) => {
                     repairPhotoInputRefs.current[item.id] = node;
@@ -398,8 +364,7 @@ export default function RepairPage() {
                 {(item.images?.length ?? 0) < MAX_REPAIR_PHOTOS && (
                   <button
                     type="button"
-                    className="with-icon-sm"
-                    style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", cursor: "pointer" }}
+                    className="with-icon-sm repair-page__pill-btn"
                     onClick={() => openRepairPhotoPicker(item.id)}
                     disabled={uploadingRepairId === item.id}
                   >

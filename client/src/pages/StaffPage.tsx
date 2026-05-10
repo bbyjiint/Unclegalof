@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ClipboardList,
   FileUp,
+  ImageOff,
   ImagePlus,
   MapPin,
   Plus,
@@ -104,6 +105,15 @@ function splitSaleNoteAndPhotos(rawNote?: string | null): { note: string; photos
     .filter(Boolean);
 
   return { note: visibleNote, photos: photoBlock };
+}
+
+/** Desk / note-embedded photos for an order — same aggregation as sale drawer thumbnails. */
+function collectSaleProductPhotoUrls(sale: Sale): string[] {
+  return Array.from(new Set([...(sale.deskPhotos || []), ...splitSaleNoteAndPhotos(sale.note).photos]));
+}
+
+function saleHasProductPhotos(sale: Sale): boolean {
+  return collectSaleProductPhotoUrls(sale).length > 0;
 }
 
 function buildSaleNotePayload(note: string, photos: string[]): string {
@@ -725,7 +735,15 @@ export default function StaffPage() {
                         onClick={() => setSelectedSaleId(isSelected ? null : sale.id)}
                       >
                         <td className="stbl-td">
-                          <span className="stbl-order-num">{sale.orderNumber}</span>
+                          <div className="stbl-order-cell">
+                            <span className="stbl-order-num">{sale.orderNumber}</span>
+                            {!saleHasProductPhotos(sale) ? (
+                              <span className="stbl-photo-missing" role="status" title="ยังไม่มีรูปสินค้า / หน้างาน">
+                                <ImageOff size={11} strokeWidth={2.2} aria-hidden />
+                                ยังไม่แนบรูป
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="stbl-td stbl-td--date">
                           {formatSaleDateThMedium(sale.date)}
@@ -1237,7 +1255,15 @@ export default function StaffPage() {
                         ) : null}
                       </td>
                       <td className="stbl-td">
-                        <span className="stbl-order-num">{sale.orderNumber}</span>
+                        <div className="stbl-order-cell">
+                          <span className="stbl-order-num">{sale.orderNumber}</span>
+                          {!saleHasProductPhotos(sale) ? (
+                            <span className="stbl-photo-missing" role="status" title="ยังไม่มีรูปสินค้า / หน้างาน">
+                              <ImageOff size={11} strokeWidth={2.2} aria-hidden />
+                              ยังไม่แนบรูป
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="stbl-td stbl-td--date">
                         {formatSaleDateThMedium(sale.date)}
@@ -1260,9 +1286,7 @@ export default function StaffPage() {
       {view !== "newOrder" && (() => {
         const sale = sales.find((s) => s.id === selectedSaleId);
         if (!sale) return null;
-        const salePhotos = Array.from(
-          new Set([...(sale.deskPhotos || []), ...splitSaleNoteAndPhotos(sale.note).photos])
-        );
+        const salePhotos = collectSaleProductPhotoUrls(sale);
         const productLine = sale.items && sale.items.length > 1
           ? sale.items.map((item) => `${item.type} × ${item.qty} ชุด`).join(", ")
           : `${sale.type} × ${sale.qty} ชุด`;

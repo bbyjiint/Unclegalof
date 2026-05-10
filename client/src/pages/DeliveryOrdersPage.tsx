@@ -23,7 +23,7 @@ function DeliveryAddressText({ text }: { text: string | null | undefined }) {
   }
   const parts = t.split(/(https?:\/\/\S+)/g);
   return (
-    <div style={{ fontSize: 14, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+    <div className="deliveries-page__addr">
       {parts.map((part, i) =>
         /^https?:\/\//.test(part) ? (
           <a key={i} href={part} target="_blank" rel="noopener noreferrer">
@@ -120,24 +120,15 @@ export default function DeliveryOrdersPage() {
   }
 
   return (
-    <main className="wrap">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 16,
-          flexWrap: "wrap",
-          gap: 8,
-        }}
-      >
-        <div className="h-with-icon" style={{ fontFamily: "Prompt", fontSize: 17, fontWeight: 700, color: "var(--dark)" }}>
+    <main className="wrap deliveries-page">
+      <div className="deliveries-page__head">
+        <div className="h-with-icon deliveries-page__title">
           <Truck size={22} strokeWidth={2} aria-hidden />
           รายการจัดส่ง (ส่งถึงบ้าน)
         </div>
       </div>
 
-      <p style={{ margin: "0 0 16px", color: "var(--muted)", fontSize: 14 }}>
+      <p className="deliveries-page__intro">
         แสดงเฉพาะคิวที่ยังไม่ส่ง — กด &quot;จัดส่งสำเร็จ&quot; เมื่อส่งถึงลูกค้าแล้ว
       </p>
 
@@ -157,7 +148,7 @@ export default function DeliveryOrdersPage() {
           <p>ยังไม่มีรายการจัดส่ง</p>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="deliveries-page__list">
           {orders.map((o) => (
             <article key={o.id} className="del-card">
               {/* Header: order number + price */}
@@ -201,7 +192,7 @@ export default function DeliveryOrdersPage() {
               {/* Product info */}
               <div className="del-card__section">
                 <div className="del-card__section-label">ข้อมูลสินค้า</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="deliveries-page__items-inner">
                   {(o.items?.length ?? 0) > 0 ? (
                     o.items!.map((item) => {
                       const photos = item.deskPhotos || [];
