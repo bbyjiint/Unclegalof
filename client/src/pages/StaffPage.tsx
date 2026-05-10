@@ -703,9 +703,20 @@ export default function StaffPage() {
 
           <section className="staff-home-sales-link">
             <h3>รายการขายเดือนนี้</h3>
-            <button type="button" onClick={() => setView("salesList")} aria-label="ไปหน้ารายการขายทั้งหมด">
-              ทั้งหมด
-            </button>
+            <div className="staff-home-sales-link__actions">
+              <button
+                type="button"
+                className="staff-home-sales-link__create"
+                onClick={() => setView("newOrder")}
+                aria-label="สร้างออเดอร์ใหม่"
+              >
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                สร้างออเดอร์ใหม่
+              </button>
+              <button type="button" onClick={() => setView("salesList")} aria-label="ไปหน้ารายการขายทั้งหมด">
+                ทั้งหมด
+              </button>
+            </div>
           </section>
 
           {/* Preview table — latest 10 orders */}

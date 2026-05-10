@@ -1428,6 +1428,38 @@ div.h-with-icon {
   outline-offset: 2px;
 }
 
+.staff-home-sales-link__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.staff-home-sales-link .staff-home-sales-link__create {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--green);
+  background: var(--green);
+  color: #fff;
+  padding: 8px 14px;
+}
+
+.staff-home-sales-link .staff-home-sales-link__create::after {
+  content: none;
+}
+
+.staff-home-sales-link .staff-home-sales-link__create:hover {
+  background: #266a44;
+  border-color: #266a44;
+  color: #fff;
+}
+
+@media (max-width: 639px) {
+  .staff-home-sales-link .staff-home-sales-link__create {
+    display: none;
+  }
+}
+
 .staff-sale-form {
   border: 1px solid #e2e8f0;
   border-radius: 16px;
