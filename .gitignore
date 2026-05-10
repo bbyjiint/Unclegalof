@@ -7,3 +7,4 @@ build
 coverage
 .DS_Store
 server/generated
+CLAUDE.md
