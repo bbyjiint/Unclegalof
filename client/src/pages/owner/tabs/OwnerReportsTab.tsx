@@ -257,6 +257,28 @@ function RepFilterSelect({ label, ariaLabel, value, options, onChange }: RepFilt
   );
 }
 
+function useMinWidth(minWidth: number) {
+  const [matches, setMatches] = useState(() => (typeof window === "undefined" ? false : window.matchMedia(`(min-width: ${minWidth}px)`).matches));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const query = window.matchMedia(`(min-width: ${minWidth}px)`);
+    const onChange = (event: MediaQueryListEvent) => setMatches(event.matches);
+
+    setMatches(query.matches);
+    if (query.addEventListener) {
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    }
+
+    query.addListener(onChange);
+    return () => query.removeListener(onChange);
+  }, [minWidth]);
+
+  return matches;
+}
+
 export default function OwnerReportsTab() {
   const {
     month,
@@ -280,6 +302,7 @@ export default function OwnerReportsTab() {
   } = useOwnerDashboard();
 
   const [filtersOpen, setFiltersOpen] = useState(true);
+  const isDesktopReports = useMinWidth(900);
 
   const batchMap = new Map<string, { total: number; paid: boolean }>();
   for (const sale of filteredAndSortedSales) {
@@ -381,98 +404,104 @@ export default function OwnerReportsTab() {
         </div>
       ) : (
         <>
-          {/* ── Mobile: card list ── */}
-          <div className="rep-list">
-            {filteredAndSortedSales.map((sale) => {
-              const slipBadgeClass = !sale.paymentSlipImage
-                ? "rep-badge--no-slip"
-                : sale.slipViewedAt
-                  ? "rep-badge--slip-seen"
-                  : "rep-badge--slip-unseen";
-              const slipLabel = !sale.paymentSlipImage
-                ? "ยังไม่มีสลิป"
-                : sale.slipViewedAt
-                  ? "ดูสลิปแล้ว"
-                  : "ยังไม่ดูสลิป";
-              const payLabel: Record<string, string> = {
-                paid: "ชำระแล้ว",
-                pending: "ค้างชำระ",
-                deposit: "มัดจำ",
-              };
-              const isUpdating = updatingSaleId === sale.id;
-              const canConfirm =
-                sale.payStatus !== "paid" &&
-                !!sale.paymentSlipImage &&
-                !!sale.slipViewedAt &&
-                !isUpdating;
+          {!isDesktopReports ? (
+            <>
+              {/* ── Mobile: card list ── */}
+              <div className="rep-list">
+                {filteredAndSortedSales.map((sale) => {
+                  const slipBadgeClass = !sale.paymentSlipImage
+                    ? "rep-badge--no-slip"
+                    : sale.slipViewedAt
+                      ? "rep-badge--slip-seen"
+                      : "rep-badge--slip-unseen";
+                  const slipLabel = !sale.paymentSlipImage
+                    ? "ยังไม่มีสลิป"
+                    : sale.slipViewedAt
+                      ? "ดูสลิปแล้ว"
+                      : "ยังไม่ดูสลิป";
+                  const payLabel: Record<string, string> = {
+                    paid: "ชำระแล้ว",
+                    pending: "ค้างชำระ",
+                    deposit: "มัดจำ",
+                  };
+                  const isUpdating = updatingSaleId === sale.id;
+                  const canConfirm =
+                    sale.payStatus !== "paid" &&
+                    !!sale.paymentSlipImage &&
+                    !!sale.slipViewedAt &&
+                    !isUpdating;
 
-              return (
-                <div className="rep-card" key={sale.id}>
-                  <div className="rep-card__head">
-                    <div>
-                      <div className="rep-card__order">{sale.orderNumber}</div>
-                      <div className="rep-card__meta">
-                        {sale.type}
-                        {sale.qty != null ? ` × ${sale.qty}` : ""}
-                        {sale.recordedAt
-                          ? ` · ${new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
-                          : ""}
+                  return (
+                    <div className="rep-card" key={sale.id}>
+                      <div className="rep-card__head">
+                        <div>
+                          <div className="rep-card__order">{sale.orderNumber}</div>
+                          <div className="rep-card__meta">
+                            {sale.type}
+                            {sale.qty != null ? ` × ${sale.qty}` : ""}
+                            {sale.recordedAt
+                              ? ` · ${new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
+                              : ""}
+                          </div>
+                        </div>
+                        <div className="rep-card__total">{formatMoney(sale.grandTotal)}</div>
+                      </div>
+
+                      <div className="rep-card__badges">
+                        <span className={`rep-badge rep-badge--${sale.payStatus}`}>
+                          {payLabel[sale.payStatus] ?? sale.payStatus}
+                        </span>
+                        <span className={`rep-badge ${slipBadgeClass}`}>{slipLabel}</span>
+                        {sale.paymentBatchNumber ? (
+                          <span className="rep-badge rep-badge--deposit">{sale.paymentBatchNumber}</span>
+                        ) : null}
+                      </div>
+
+                      <div className="rep-card__actions">
+                        {sale.paymentSlipImage ? (
+                          <>
+                            <button
+                              type="button"
+                              className="rep-btn rep-btn--view"
+                              onClick={() => void viewPaymentSlipAndMark(sale.id, sale.paymentSlipImage!)}
+                            >
+                              ดูสลิป
+                            </button>
+                            <button
+                              type="button"
+                              className="rep-btn rep-btn--danger"
+                              onClick={() => void removePaymentSlipByOwner(sale.id)}
+                              disabled={isUpdating}
+                            >
+                              ลบสลิป
+                            </button>
+                          </>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="rep-btn rep-btn--confirm"
+                          disabled={!canConfirm}
+                          onClick={() => void confirmSalePaid(sale.id)}
+                        >
+                          {sale.payStatus === "paid"
+                            ? "ชำระแล้ว"
+                            : isUpdating
+                              ? "กำลังอัปเดต..."
+                              : "ยืนยันชำระ"}
+                        </button>
                       </div>
                     </div>
-                    <div className="rep-card__total">{formatMoney(sale.grandTotal)}</div>
-                  </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
 
-                  <div className="rep-card__badges">
-                    <span className={`rep-badge rep-badge--${sale.payStatus}`}>
-                      {payLabel[sale.payStatus] ?? sale.payStatus}
-                    </span>
-                    <span className={`rep-badge ${slipBadgeClass}`}>{slipLabel}</span>
-                    {sale.paymentBatchNumber ? (
-                      <span className="rep-badge rep-badge--deposit">{sale.paymentBatchNumber}</span>
-                    ) : null}
-                  </div>
-
-                  <div className="rep-card__actions">
-                    {sale.paymentSlipImage ? (
-                      <>
-                        <button
-                          type="button"
-                          className="rep-btn rep-btn--view"
-                          onClick={() => void viewPaymentSlipAndMark(sale.id, sale.paymentSlipImage!)}
-                        >
-                          ดูสลิป
-                        </button>
-                        <button
-                          type="button"
-                          className="rep-btn rep-btn--danger"
-                          onClick={() => void removePaymentSlipByOwner(sale.id)}
-                          disabled={isUpdating}
-                        >
-                          ลบสลิป
-                        </button>
-                      </>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="rep-btn rep-btn--confirm"
-                      disabled={!canConfirm}
-                      onClick={() => void confirmSalePaid(sale.id)}
-                    >
-                      {sale.payStatus === "paid"
-                        ? "ชำระแล้ว"
-                        : isUpdating
-                          ? "กำลังอัปเดต..."
-                          : "ยืนยันชำระ"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* ── Desktop: full table ── */}
-          <div className="rep-tbl">
-            <table>
+          {isDesktopReports ? (
+            <>
+              {/* ── Desktop: full table ── */}
+              <div className="rep-tbl">
+                <table>
               <thead>
                 <tr>
                   <th>ออเดอร์</th>
@@ -594,8 +623,10 @@ export default function OwnerReportsTab() {
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+                </table>
+              </div>
+            </>
+          ) : null}
         </>
       )}
     </div>
