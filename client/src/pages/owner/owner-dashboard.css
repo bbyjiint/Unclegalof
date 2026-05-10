@@ -798,7 +798,6 @@
 
 /* ── Reports: mobile card list ───────────────────────────────────── */
 
-/* Card list: visible on mobile, hidden on desktop */
 .rep-list {
   display: flex;
   flex-direction: column;
@@ -806,23 +805,10 @@
   margin-top: 12px;
 }
 
-@media (min-width: 900px) {
-  .rep-list {
-    display: none;
-  }
-}
-
-/* Table: hidden on mobile, visible on desktop */
 .rep-tbl {
-  display: none;
+  display: block;
   margin-top: 12px;
   overflow-x: auto;
-}
-
-@media (min-width: 900px) {
-  .rep-tbl {
-    display: block;
-  }
 }
 
 .rep-card {
