@@ -301,7 +301,7 @@ export default function OwnerReportsTab() {
     updatingSaleId
   } = useOwnerDashboard();
 
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const isDesktopReports = useMinWidth(900);
 
   const batchMap = new Map<string, { total: number; paid: boolean }>();
