@@ -117,6 +117,26 @@
   overscroll-behavior: none;
 }
 
+@media (max-width: 899px) {
+  .owner-dash--mobile-sidebar-open .owner-dash__sidebar {
+    /* Align first row (close control) with `.owner-dash__topbar` — no extra top inset */
+    padding: 0 0 14px;
+  }
+
+  .owner-dash--mobile-sidebar-open .owner-dash__sidebar-head {
+    padding: 10px 16px;
+    min-height: var(--app-header-h);
+    box-sizing: border-box;
+    align-items: center;
+  }
+
+  .owner-dash--mobile-sidebar-open .owner-dash__sidebar-close {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+}
+
 @media (min-width: 900px) {
   .owner-dash__sidebar {
     display: flex;
