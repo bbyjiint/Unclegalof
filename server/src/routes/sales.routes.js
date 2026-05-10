@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { UserRole } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
@@ -305,27 +305,38 @@ function buildLineOrderNumber(orderNumber, lineNumber) {
 }
 
 async function getNextLogicalOrderSequence(tx, monthStart, monthEnd) {
-  const [legacyCount, salesOrderCount] = await Promise.all([
-    tx.saleRecord.count({
+  // Use MAX(suffix) + 1 instead of COUNT(*) + 1 so deletions don't shift the
+  // computed next number onto an orderNumber that already exists in the DB
+  // (which would cause P2002 on every create until a new month rolls over).
+  const [latestSalesOrder, latestLegacy] = await Promise.all([
+    tx.salesOrder.findFirst({
+      where: { saleDate: { gte: monthStart, lt: monthEnd } },
+      orderBy: { orderNumber: "desc" },
+      select: { orderNumber: true },
+    }),
+    tx.saleRecord.findFirst({
       where: {
-        saleDate: {
-          gte: monthStart,
-          lt: monthEnd,
-        },
+        saleDate: { gte: monthStart, lt: monthEnd },
         salesOrderId: null,
       },
-    }),
-    tx.salesOrder.count({
-      where: {
-        saleDate: {
-          gte: monthStart,
-          lt: monthEnd,
-        },
-      },
+      orderBy: { orderNumber: "desc" },
+      select: { orderNumber: true },
     }),
   ]);
 
-  return legacyCount + salesOrderCount + 1;
+  const suffixOf = (orderNumber) => {
+    if (!orderNumber) return 0;
+    // SalesOrder uses SO-YYYYMM-NNNN; legacy SaleRecord (no parent) may use
+    // an SO-YYYYMM-NNNN-LXX form — strip the line suffix before parsing.
+    const trunk = orderNumber.replace(/-L\d+$/, "");
+    const tail = trunk.split("-").pop();
+    const parsed = parseInt(tail, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const maxSuffix = Math.max(suffixOf(latestSalesOrder?.orderNumber), suffixOf(latestLegacy?.orderNumber));
+
+  return maxSuffix + 1;
 }
 
 async function loadLogicalSaleGroup(tx, id) {
@@ -569,45 +580,45 @@ router.post(
         customerTotal,
       });
 
-      let priorUnits = 0;
-      if (req.role === UserRole.SALES) {
-        const priorAgg = await prisma.saleRecord.aggregate({
-          where: {
-            createdByUserId: req.user.id,
-            saleDate: { gte: monthStart, lt: monthEnd },
-          },
-          _sum: { quantity: true },
-        });
-        priorUnits = priorAgg._sum.quantity ?? 0;
-      }
-
-      const sequenceNext = await getNextLogicalOrderSequence(prisma, monthStart, monthEnd);
-      const publicOrderNumber = `SO-${year}${String(month).padStart(2, "0")}-${String(sequenceNext).padStart(4, "0")}`;
-
       const uniqueDeskItemIds = [...new Set(resolvedLines.map((line) => line.deskItem.id))];
 
-      // Load available lots ordered oldest-first for FIFO consumption; costPerUnit included for COGS.
-      const sourceLots = await prisma.inventoryLot.findMany({
-        where: {
-          deskItemId: { in: uniqueDeskItemIds },
-          remainingQty: { gt: 0 },
-        },
-        orderBy: [{ deskItemId: "asc" }, { createdAt: "asc" }],
-      });
+      // Run 2 independent pre-transaction queries in parallel — saves a serial round-trip.
+      // NOTE: order-number sequencing is deliberately computed inside the $transaction below
+      // (at Serializable isolation) so concurrent creates can't both pick the same SO number.
+      const [priorAggResult, sourceLots] = await Promise.all([
+        req.role === UserRole.SALES
+          ? prisma.saleRecord.aggregate({
+              where: {
+                createdByUserId: req.user.id,
+                saleDate: { gte: monthStart, lt: monthEnd },
+              },
+              _sum: { quantity: true },
+            })
+          : Promise.resolve(null),
+        // Load available lots oldest-first for FIFO consumption; costPerUnit included for COGS.
+        prisma.inventoryLot.findMany({
+          where: {
+            deskItemId: { in: uniqueDeskItemIds },
+            remainingQty: { gt: 0 },
+          },
+          orderBy: [{ deskItemId: "asc" }, { createdAt: "asc" }],
+        }),
+      ]);
 
-      const sourceLotsByDeskItemId = new Map();
-      for (const lot of sourceLots) {
-        const rows = sourceLotsByDeskItemId.get(lot.deskItemId) || [];
-        rows.push({
-          id: lot.id,
-          remainingQty: lot.remainingQty,
-          costPerUnit: lot.costPerUnit,
-        });
-        sourceLotsByDeskItemId.set(lot.deskItemId, rows);
-      }
+      const initialPriorUnits = priorAggResult?._sum?.quantity ?? 0;
       const orderDeskPhotos = Array.from(new Set([...deskPhotos, ...resolvedLines.flatMap((line) => line.deskPhotos || [])]));
 
-      const savedRows = await prisma.$transaction(async (tx) => {
+      // Per-attempt mutable state — cloned on each retry so a failed attempt's mutations don't leak.
+      let priorUnits;
+      let sourceLotsByDeskItemId;
+      let publicOrderNumber;
+
+      const runOrderTransaction = () =>
+        prisma.$transaction(async (tx) => {
+          // Compute order-number sequence INSIDE the tx so the COUNT+INSERT is serializable —
+          // this is what prevents two concurrent creates from picking the same SO-YYYYMM-NNNN.
+          const sequenceNext = await getNextLogicalOrderSequence(tx, monthStart, monthEnd);
+          publicOrderNumber = `SO-${year}${String(month).padStart(2, "0")}-${String(sequenceNext).padStart(4, "0")}`;
 
         const salesOrder = await tx.salesOrder.create({
           data: {
@@ -807,7 +818,40 @@ router.post(
       }, {
         maxWait: 5000,
         timeout: 15000,
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
+
+      // Retry loop guards against a P2002 collision on orderNumber if a concurrent transaction
+      // committed the same SO-YYYYMM-NNNN before our serialized check could see it.
+      const MAX_ATTEMPTS = 3;
+      let savedRows;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+        // Reset per-attempt mutable state — earlier attempts may have mutated lot.remainingQty / priorUnits in-memory.
+        priorUnits = initialPriorUnits;
+        sourceLotsByDeskItemId = new Map();
+        for (const lot of sourceLots) {
+          const rows = sourceLotsByDeskItemId.get(lot.deskItemId) || [];
+          rows.push({
+            id: lot.id,
+            remainingQty: lot.remainingQty,
+            costPerUnit: lot.costPerUnit,
+          });
+          sourceLotsByDeskItemId.set(lot.deskItemId, rows);
+        }
+
+        try {
+          savedRows = await runOrderTransaction();
+          break;
+        } catch (error) {
+          const target = Array.isArray(error?.meta?.target) ? error.meta.target : [];
+          const isOrderNumberCollision =
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002" &&
+            target.some((t) => String(t).toLowerCase().includes("ordernumber"));
+          if (isOrderNumberCollision && attempt < MAX_ATTEMPTS) continue;
+          throw error;
+        }
+      }
 
       const includeCost = req.role === UserRole.OWNER;
       const item = saleGroupToFrontendSale(
