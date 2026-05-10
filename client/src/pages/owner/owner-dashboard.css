@@ -4,7 +4,6 @@
   --owner-nav-h: 56px;
   --owner-sidebar-w: 240px;
   --owner-sidebar-collapsed-w: 64px;
-  --owner-topbar-h: 52px;
   /* Same as `:root --app-header-h` — anchors fixed sidebar flush under `.header` */
   --owner-sticky-offset: var(--app-header-h);
   /* Global bottom nav `.bottom-nav` — sidebar ends above this */
@@ -28,15 +27,18 @@
 
 .owner-dash__topbar {
   position: sticky;
-  top: 0;
-  z-index: 20;
+  /* Pin under global `.header` (same scroll stack as AppShell chrome) */
+  top: var(--owner-sticky-offset);
+  z-index: 50;
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: var(--owner-topbar-h);
+  min-height: var(--app-header-h);
+  box-sizing: border-box;
   padding: 10px 16px;
   background: #fff;
   border-bottom: 1px solid #e8e8ec;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.08);
 }
 
 @media (min-width: 900px) {
