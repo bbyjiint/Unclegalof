@@ -93,6 +93,8 @@ export interface Sale {
   grossProfit?: number;
   /** ค่าจัดส่ง (ลูกค้าจ่าย) — เท่ากับ workerDistanceFee เมื่อจัดส่ง / 0 เมื่อรับเอง */
   deliveryFee?: number;
+  /** เมื่อมี includeCost — มีบรรทัดในออเดอร์ที่รอกรอก FIFO แล้ว */
+  costStatus?: "confirmed" | "pending_owner_review";
   /** ค่ายก/แบกของพนักงานต่อออเดอร์ (รวมทุกบรรทัด) */
   workerLiftFee?: number;
   /** ค่าจัดส่งระยะทางที่จ่ายให้พนักงาน (เท่ากับค่าจัดส่งของลูกค้าเมื่อจัดส่ง) */
@@ -231,6 +233,15 @@ export interface OwnerDashboard {
     pendingCostLineCount: number;
     /** รายรับรวมของ pending-cost orders */
     pendingCostRevenue: number;
+    /** ค่าใช้จ่ายจ่ายให้พนักงาน — เดือนที่เลือก (จากคอมมิชัน + ค่ายก + ค่าส่งให้พนักงาน) */
+    staffExpenses: {
+      salesCommission: number;
+      liftingFees: number;
+      deliveryWorkerFees: number;
+      total: number;
+    };
+    /** กำไรรวม (ยืนยันต้นทุนแล้ว) − ค่าใช้จ่ายพนักงานในเดือน */
+    ownerNetIncome: number;
   };
   /** แต่ละบรรทัดขายที่ costStatus = pending_owner_review สำหรับเดือนที่เลือก */
   pendingCostOrders: PendingCostOrder[];

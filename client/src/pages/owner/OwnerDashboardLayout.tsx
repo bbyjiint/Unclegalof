@@ -30,13 +30,22 @@ import {
 } from "./ownerDashboardContext";
 import "./owner-dashboard.css";
 
+type OwnerNavSection = "sales" | "overview" | "stock" | "management";
+
 const NAV_ITEMS = [
-  { to: "/owner/reports", end: false as const, label: "รายการขาย", Icon: ClipboardList },
-  { to: "/owner/overview", end: true as const, label: "ภาพรวม", Icon: LayoutDashboard },
-  { to: "/owner/employees", end: false as const, label: "พนักงาน", Icon: Users },
-  { to: "/owner/promotions", end: false as const, label: "โปรโมชั่น", Icon: Tag },
-  { to: "/owner/purchasing", end: false as const, label: "รับของ / สต็อก", Icon: Package },
-  { to: "/owner/delivery", end: false as const, label: "ค่าจัดส่ง", Icon: MapPin }
+  { to: "/owner/reports", end: false as const, label: "รายการขาย", Icon: ClipboardList, section: "sales" as const },
+  { to: "/owner/overview", end: true as const, label: "ภาพรวม", Icon: LayoutDashboard, section: "overview" as const },
+  { to: "/owner/employees", end: false as const, label: "พนักงาน", Icon: Users, section: "management" as const },
+  { to: "/owner/promotions", end: false as const, label: "โปรโมชั่น", Icon: Tag, section: "sales" as const },
+  { to: "/owner/purchasing", end: false as const, label: "รับของ / สต็อก", Icon: Package, section: "stock" as const },
+  { to: "/owner/delivery", end: false as const, label: "ค่าจัดส่ง", Icon: MapPin, section: "management" as const }
+];
+
+const NAV_SECTIONS: Array<{ id: OwnerNavSection; label: string }> = [
+  { id: "overview", label: "ภาพรวม" },
+  { id: "sales", label: "การขาย" },
+  { id: "stock", label: "สินค้า & สต็อก" },
+  { id: "management", label: "จัดการ" }
 ];
 
 function pageTitleFromPath(pathname: string): string {
@@ -395,7 +404,7 @@ export default function OwnerDashboardLayout() {
 
   if (!dashboard) {
     return (
-      <main className="owrap owner-dash">
+      <main className="owner-dash">
         <div className="owner-dash__loading">{error || "กำลังโหลด..."}</div>
       </main>
     );
@@ -403,7 +412,7 @@ export default function OwnerDashboardLayout() {
 
   return (
     <OwnerDashboardContext.Provider value={contextValue}>
-      <main className={`owrap owner-dash${sidebarCollapsed ? " owner-dash--sidebar-collapsed" : ""}${mobileSidebarOpen ? " owner-dash--mobile-sidebar-open" : ""}`}>
+      <main className={`owner-dash${sidebarCollapsed ? " owner-dash--sidebar-collapsed" : ""}${mobileSidebarOpen ? " owner-dash--mobile-sidebar-open" : ""}`}>
 
         {/* Mobile topbar */}
         <header className="owner-dash__topbar">
@@ -455,20 +464,32 @@ export default function OwnerDashboardLayout() {
             </button>
           </div>
           <nav className="owner-dash__nav-desktop">
-            {NAV_ITEMS.map(({ to, end, label, Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                onClick={() => setMobileSidebarOpen(false)}
-                className={({ isActive }) =>
-                  `owner-dash__nav-link${isActive ? " owner-dash__nav-link--active" : ""}`
-                }
-              >
-                <Icon size={22} strokeWidth={2} aria-hidden />
-                <span className="owner-dash__nav-label">{label}</span>
-              </NavLink>
-            ))}
+            {NAV_SECTIONS.map((section) => {
+              const sectionItems = NAV_ITEMS.filter((item) => item.section === section.id);
+              if (sectionItems.length === 0) return null;
+
+              return (
+                <div className="owner-dash__nav-section" key={section.id}>
+                  <span className="owner-dash__nav-section-label">{section.label}</span>
+                  {sectionItems.map(({ to, end, label, Icon }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      end={end}
+                      onClick={() => setMobileSidebarOpen(false)}
+                      className={({ isActive }) =>
+                        `owner-dash__nav-link${isActive ? " owner-dash__nav-link--active" : ""}`
+                      }
+                    >
+                      <span className="owner-dash__nav-icon">
+                        <Icon size={18} strokeWidth={2.35} aria-hidden />
+                      </span>
+                      <span className="owner-dash__nav-label">{label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              );
+            })}
           </nav>
         </aside>
 

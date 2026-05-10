@@ -343,6 +343,8 @@ export const api = {
   // Dashboard
   ownerDashboard: (month: number, year: number) =>
     request<OwnerDashboard>(`/dashboard/owner?month=${month}&year=${year}`),
+  ownerMonthlyIncome: (year: number) =>
+    request<{ year: number; incomeByMonth: number[] }>(`/dashboard/owner/monthly-income?year=${year}`),
 
   // Sales list alias + reports (tenant-scoped on server)
   orders: (month: number, year: number) => request<SalesResponse>(`/orders?month=${month}&year=${year}`),

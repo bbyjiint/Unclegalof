@@ -16,6 +16,39 @@ const queryMonthYearSchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100),
 });
 
+const queryYearSchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+});
+
+/** Monthly revenue for bar chart — same totals as dashboard summary income (sum of SaleRecord.amount). */
+router.get(
+  "/owner/monthly-income",
+  authenticate,
+  requireOwner,
+  validate(queryYearSchema, "query"),
+  async (req, res, next) => {
+    try {
+      const yr = Number(req.query.year);
+      const promises = [];
+      for (let m = 1; m <= 12; m++) {
+        const start = new Date(Date.UTC(yr, m - 1, 1));
+        const end = new Date(Date.UTC(yr, m, 1));
+        promises.push(
+          prisma.saleRecord.aggregate({
+            where: { saleDate: { gte: start, lt: end } },
+            _sum: { amount: true },
+          }),
+        );
+      }
+      const results = await Promise.all(promises);
+      const incomeByMonth = results.map((row) => Number(row._sum.amount ?? 0));
+      res.json({ year: yr, incomeByMonth });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // GET /api/dashboard/owner — sales list for selected month; financial summary = all-time (รายรับ − ต้นทุนสินค้า)
 router.get(
   "/owner",
@@ -142,6 +175,21 @@ router.get(
 
       const costPositions = await getAllCostPositionsForOwner(prisma);
 
+      /** Commissions + worker payouts — grouped `sales` avoid double-counting order-level lift/distance. */
+      let salesCommission = 0;
+      for (const r of saleRecordsMonth) {
+        for (const c of r.commissions || []) {
+          salesCommission += Number(c.amount || 0);
+        }
+      }
+      let liftingFees = 0;
+      let deliveryWorkerFees = 0;
+      for (const s of sales) {
+        liftingFees += Number(s.workerLiftFee || 0);
+        deliveryWorkerFees += Number(s.workerDistanceFee || 0);
+      }
+      const staffExpenseTotal = salesCommission + liftingFees + deliveryWorkerFees;
+
       res.json({
         summary: {
           income,
@@ -151,6 +199,13 @@ router.get(
           margin,
           pendingCostLineCount,
           pendingCostRevenue,
+          staffExpenses: {
+            salesCommission,
+            liftingFees,
+            deliveryWorkerFees,
+            total: staffExpenseTotal,
+          },
+          ownerNetIncome: Math.max(0, Math.round(profit - staffExpenseTotal)),
         },
         pendingCostOrders,
         costPositions,

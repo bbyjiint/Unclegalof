@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { CheckCircle2, Clock, Package, Pencil, Plus, PlusCircle, Receipt, Scale, Trash2, X } from "lucide-react";
+import { formatMoney } from "../data/constants";
+import { useAuth } from "../components/AuthProvider";
 import { api } from "../lib/api";
-import type { InventoryMovement, InventorySummaryItem, ProductItem } from "../types";
+import type { CostPositionRow, InventoryMovement, InventorySummaryItem, ProductItem } from "../types";
 
 type InventoryFormState = {
   type: string;
@@ -36,10 +38,142 @@ function formatMovementDate(iso?: string): string {
   return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" });
 }
 
+function formatLotDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("th-TH", {
+    day: "numeric",
+    month: "short",
+    year: "2-digit",
+  });
+}
+
+function InventoryCostPositionsCard({ costPositions }: { costPositions: CostPositionRow[] }) {
+  const totalStockValue = costPositions.reduce(
+    (sum, product) => sum + product.lots.reduce((lotSum, lot) => lotSum + lot.totalValue, 0),
+    0
+  );
+  const totalPendingQty = costPositions.reduce((sum, product) => sum + product.pendingQty, 0);
+
+  return (
+    <div className="card" style={{ marginBottom: 12, overflowX: "auto" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          flexWrap: "wrap",
+          gap: 6,
+        }}
+      >
+        <h3 className="inv-section-title" style={{ margin: 0 }}>
+          ต้นทุนคงคลัง (FIFO ต่อล็อต)
+        </h3>
+        {totalStockValue > 0 && (
+          <span style={{ fontSize: 13, color: "#334155" }}>
+            มูลค่ารวม <strong>{formatMoney(totalStockValue)}</strong>
+            {totalPendingQty > 0 && (
+              <span style={{ marginLeft: 8, color: "#d97706", fontSize: 12 }}>
+                + {totalPendingQty} ชิ้นรอต้นทุน
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 10 }}>
+        <thead>
+          <tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0", color: "#64748b" }}>
+            <th style={{ padding: "6px 8px" }}>สินค้า</th>
+            <th style={{ padding: "6px 8px" }}>วันที่รับ</th>
+            <th style={{ padding: "6px 8px", textAlign: "right" }}>คงคลัง</th>
+            <th style={{ padding: "6px 8px", textAlign: "right" }}>ต้นทุน/ชิ้น</th>
+            <th style={{ padding: "6px 8px", textAlign: "right" }}>มูลค่าล็อต</th>
+          </tr>
+        </thead>
+        <tbody>
+          {costPositions.map((product) => {
+            if (product.lots.length === 0) {
+              return (
+                <tr key={product.deskItemId} style={{ borderBottom: "1px solid #f1f5f9", color: "#94a3b8" }}>
+                  <td style={{ padding: "7px 8px" }}>{product.name}</td>
+                  <td style={{ padding: "7px 8px" }}>—</td>
+                  <td style={{ padding: "7px 8px", textAlign: "right" }}>0</td>
+                  <td style={{ padding: "7px 8px", textAlign: "right" }}>—</td>
+                  <td style={{ padding: "7px 8px", textAlign: "right" }}>—</td>
+                </tr>
+              );
+            }
+
+            return product.lots.map((lot, lotIndex) => {
+              const isFirst = lotIndex === 0;
+              const isLastLot = lotIndex === product.lots.length - 1;
+
+              return (
+                <tr
+                  key={lot.id}
+                  style={{ borderBottom: isLastLot ? "1px solid #cbd5e1" : "1px solid #f1f5f9" }}
+                >
+                  <td style={{ padding: "7px 8px" }}>
+                    {isFirst ? (
+                      <span>
+                        {product.name}
+                        {product.lots.length > 1 && (
+                          <span style={{ marginLeft: 5, fontSize: 11, color: "#94a3b8" }}>
+                            ({product.lots.length} ล็อต)
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span style={{ color: "#cbd5e1", paddingLeft: 10 }}>↳</span>
+                    )}
+                  </td>
+                  <td style={{ padding: "7px 8px", color: "#64748b", fontSize: 12 }}>
+                    {isFirst && (
+                      <span
+                        style={{
+                          marginRight: 5,
+                          fontSize: 10,
+                          background: "var(--green-pale)",
+                          color: "var(--green)",
+                          borderRadius: 3,
+                          padding: "1px 4px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        ถัดไป
+                      </span>
+                    )}
+                    {formatLotDate(lot.receivedAt)}
+                  </td>
+                  <td style={{ padding: "7px 8px", textAlign: "right" }}>{lot.remainingQty}</td>
+                  <td style={{ padding: "7px 8px", textAlign: "right" }}>
+                    {lot.costPerUnit === 0 ? (
+                      <span style={{ fontSize: 11, background: "#fef3c7", color: "#d97706", borderRadius: 4, padding: "1px 5px" }}>
+                        รอกรอก
+                      </span>
+                    ) : (
+                      formatMoney(lot.costPerUnit)
+                    )}
+                  </td>
+                  <td style={{ padding: "7px 8px", textAlign: "right" }}>
+                    {lot.totalValue > 0 ? formatMoney(lot.totalValue) : <span style={{ color: "#94a3b8" }}>—</span>}
+                  </td>
+                </tr>
+              );
+            });
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function InventoryPage() {
+  const { user } = useAuth();
+  const isOwner = user?.role === "OWNER";
   const [summary, setSummary] = useState<InventorySummaryItem[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [costPositions, setCostPositions] = useState<CostPositionRow[]>([]);
   const [form, setForm] = useState<InventoryFormState>({ type: "", qty: 1, note: "" });
   const [productForm, setProductForm] = useState<ProductFormState>({ name: "", onsitePrice: 0, deliveryPrice: 0 });
   const [receiveOpen, setReceiveOpen] = useState(false);
@@ -59,13 +193,16 @@ export default function InventoryPage() {
   async function loadPage(): Promise<void> {
     setLoading(true);
     try {
-      const [data, productData] = await Promise.all([
+      const now = new Date();
+      const [data, productData, ownerData] = await Promise.all([
         api.inventorySummary(),
         api.inventoryProducts(),
+        isOwner ? api.ownerDashboard(now.getMonth() + 1, now.getFullYear()) : Promise.resolve(null),
       ]);
       setSummary(data.summary || []);
       setMovements(data.movements || []);
       setProducts(productData.items || []);
+      setCostPositions(ownerData?.costPositions || []);
       if (!form.type && productData.items?.[0]?.name) {
         setForm((c) => ({ ...c, type: productData.items[0].name }));
       }
@@ -80,7 +217,7 @@ export default function InventoryPage() {
     }
   }
 
-  useEffect(() => { void loadPage(); }, []);
+  useEffect(() => { void loadPage(); }, [isOwner]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -248,6 +385,10 @@ export default function InventoryPage() {
               ))
             )}
           </div>
+
+          {isOwner && costPositions.length > 0 ? (
+            <InventoryCostPositionsCard costPositions={costPositions} />
+          ) : null}
 
           {/* History list */}
           <button type="button" className={`inv-adjust-toggle${historyExpanded ? " inv-hist-toggle--open" : ""}`} style={{ marginBottom: 0 }} onClick={() => setHistoryExpanded((v) => !v)}>
