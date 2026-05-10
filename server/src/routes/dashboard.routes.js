@@ -20,7 +20,7 @@ const queryYearSchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100),
 });
 
-/** Monthly revenue for bar chart — same totals as dashboard summary income (sum of SaleRecord.amount). */
+/** Monthly revenue for bar chart — single GROUP BY query instead of 12 aggregates. */
 router.get(
   "/owner/monthly-income",
   authenticate,
@@ -29,19 +29,23 @@ router.get(
   async (req, res, next) => {
     try {
       const yr = Number(req.query.year);
-      const promises = [];
-      for (let m = 1; m <= 12; m++) {
-        const start = new Date(Date.UTC(yr, m - 1, 1));
-        const end = new Date(Date.UTC(yr, m, 1));
-        promises.push(
-          prisma.saleRecord.aggregate({
-            where: { saleDate: { gte: start, lt: end } },
-            _sum: { amount: true },
-          }),
-        );
-      }
-      const results = await Promise.all(promises);
-      const incomeByMonth = results.map((row) => Number(row._sum.amount ?? 0));
+      const yearStart = new Date(Date.UTC(yr, 0, 1));
+      const yearEnd = new Date(Date.UTC(yr + 1, 0, 1));
+
+      const rows = await prisma.$queryRaw`
+        SELECT
+          EXTRACT(MONTH FROM "saleDate")::int AS month,
+          COALESCE(SUM(amount), 0)::float8     AS total
+        FROM "SaleRecord"
+        WHERE "saleDate" >= ${yearStart} AND "saleDate" < ${yearEnd}
+        GROUP BY EXTRACT(MONTH FROM "saleDate")
+      `;
+
+      const incomeByMonth = Array.from({ length: 12 }, (_, i) => {
+        const row = rows.find((r) => Number(r.month) === i + 1);
+        return Number(row?.total ?? 0);
+      });
+
       res.json({ year: yr, incomeByMonth });
     } catch (err) {
       next(err);
@@ -62,78 +66,52 @@ router.get(
       const start = new Date(Date.UTC(year, month - 1, 1));
       const end = new Date(Date.UTC(year, month, 1));
 
-      const saleRecordsMonth = await prisma.saleRecord.findMany({
-        where: {
-          saleDate: {
-            gte: start,
-            lt: end,
-          },
-        },
-        include: {
-          ...saleRecordFrontendInclude,
-          commissions: true,
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-      const promotionRows = await findAllPromotionsRows();
-
-      const sales = saleRecordsToFrontendSales(saleRecordsMonth, { includeCost: true });
-
-      const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
-
-      // Monthly totals for the selected month/year — same date window as the sales list above.
-      const [allIncomeAgg, confirmedAgg, pendingCostRecords, legacyRows] = await Promise.all([
-        // Total revenue — all sales regardless of cost status.
-        prisma.saleRecord.aggregate({
+      // All independent queries run in parallel — collapses 5 serial DB round-trips into 1.
+      const [saleRecordsMonth, promotionRows, costPositions] = await Promise.all([
+        prisma.saleRecord.findMany({
           where: { saleDate: { gte: start, lt: end } },
-          _sum: { amount: true },
+          include: { ...saleRecordFrontendInclude, commissions: true },
+          orderBy: { createdAt: "desc" },
         }),
-        // Confirmed-cost records only — used for profit/margin so pending cost does not inflate profit.
-        prisma.saleRecord.aggregate({
-          where: { saleDate: { gte: start, lt: end }, costStatus: "confirmed" },
-          _sum: { amount: true, cogsTotal: true },
-        }),
-        // Pending-cost records — returned in full so the owner can see exactly which lines need attention.
-        prisma.saleRecord.findMany({
-          where: { saleDate: { gte: start, lt: end }, costStatus: "pending_owner_review" },
-          select: {
-            id: true,
-            orderNumber: true,
-            quantity: true,
-            amount: true,
-            saleDate: true,
-            deskItem: { select: { name: true } },
-            salesOrder: { select: { orderNumber: true } },
-          },
-          orderBy: [{ saleDate: "asc" }, { createdAt: "asc" }],
-        }),
-        // Legacy rows: confirmed but cogsTotal=0 yet have avgUnitCostSnapshot (pre-FIFO orders).
-        prisma.saleRecord.findMany({
-          where: {
-            saleDate: { gte: start, lt: end },
-            costStatus: "confirmed",
-            cogsTotal: { lte: 0 },
-            avgUnitCostSnapshot: { gt: 0 },
-          },
-          select: { quantity: true, avgUnitCostSnapshot: true },
-        }),
+        findAllPromotionsRows(),
+        getAllCostPositionsForOwner(prisma),
       ]);
 
-      const income = Number(allIncomeAgg._sum.amount ?? 0);
-      const confirmedIncome = Number(confirmedAgg._sum.amount ?? 0);
-      let cogsFromSales = Number(confirmedAgg._sum.cogsTotal ?? 0);
-      for (const r of legacyRows) {
-        cogsFromSales += Number(r.avgUnitCostSnapshot) * Number(r.quantity ?? 0);
+      const sales = saleRecordsToFrontendSales(saleRecordsMonth, { includeCost: true });
+      const promotionsFrontend = promotionRows.map((promo, index) => promotionToFrontend(promo, index));
+
+      // Compute monthly financial aggregates from the already-fetched records —
+      // avoids 4 additional DB queries (allIncomeAgg, confirmedAgg, legacyRows, pendingCostRecords).
+      let income = 0;
+      let confirmedIncome = 0;
+      let cogsFromSales = 0;
+      const pendingCostRecords = [];
+
+      for (const r of saleRecordsMonth) {
+        const amount = Number(r.amount || 0);
+        income += amount;
+
+        if (r.costStatus === "confirmed") {
+          confirmedIncome += amount;
+          const cogs = Number(r.cogsTotal || 0);
+          if (cogs > 0) {
+            cogsFromSales += cogs;
+          } else if (Number(r.avgUnitCostSnapshot || 0) > 0) {
+            // Legacy rows: confirmed but FIFO COGS not recorded — fall back to snapshot average.
+            cogsFromSales += Number(r.avgUnitCostSnapshot) * Number(r.quantity || 0);
+          }
+        } else if (r.costStatus === "pending_owner_review") {
+          pendingCostRecords.push(r);
+        }
       }
+
       const cost = cogsFromSales;
       const profit = confirmedIncome - cost;
       const margin = confirmedIncome > 0 ? Math.round((profit / confirmedIncome) * 1000) / 10 : 0;
       const pendingCostLineCount = pendingCostRecords.length;
       const pendingCostRevenue = pendingCostRecords.reduce((s, r) => s + Number(r.amount), 0);
 
-      // For each pending line, fetch the individual consumed lots that still have zero cost
-      // so the owner can see exactly which lot dates to fill in — not just a count.
+      // One conditional round-trip — depends on pendingCostRecords computed above.
       const pendingConsumedLots =
         pendingCostRecords.length > 0
           ? await prisma.salesOrderLineConsumedLot.findMany({
@@ -163,7 +141,13 @@ router.get(
         });
       }
 
-      const pendingCostOrders = pendingCostRecords.map((r) => ({
+      // Sort pending records saleDate asc, createdAt asc — matches original DB ordering.
+      const sortedPending = [...pendingCostRecords].sort((a, b) => {
+        const dateDiff = new Date(a.saleDate).getTime() - new Date(b.saleDate).getTime();
+        return dateDiff !== 0 ? dateDiff : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+
+      const pendingCostOrders = sortedPending.map((r) => ({
         id: r.id,
         orderNumber: r.salesOrder?.orderNumber ?? r.orderNumber.replace(/-L\d+$/, ""),
         productName: r.deskItem?.name ?? "",
@@ -173,9 +157,7 @@ router.get(
         pendingLots: pendingLotsBySaleRecord.get(r.id) ?? [],
       }));
 
-      const costPositions = await getAllCostPositionsForOwner(prisma);
-
-      /** Commissions + worker payouts — grouped `sales` avoid double-counting order-level lift/distance. */
+      /** Commissions + worker payouts — grouped `sales` avoids double-counting order-level lift/distance. */
       let salesCommission = 0;
       for (const r of saleRecordsMonth) {
         for (const c of r.commissions || []) {

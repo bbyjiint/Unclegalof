@@ -2653,7 +2653,7 @@ button.sale-slip-link {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 14px;
+  padding: 8px 14px;
   border-bottom: 1px solid #f1f5f9;
 }
 
@@ -2672,7 +2672,7 @@ button.sale-slip-link {
   font-weight: 700;
   color: #0f172a;
   line-height: 1.2;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .inv-hist-item__meta-row {
@@ -2680,7 +2680,7 @@ button.sale-slip-link {
   align-items: center;
   flex-wrap: wrap;
   gap: 5px;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 }
 
 .inv-hist-item__note {

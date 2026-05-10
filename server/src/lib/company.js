@@ -1,10 +1,16 @@
 import { UserRole } from "@prisma/client";
 
+// Module-level cache — the owner ID is constant for the lifetime of a serverless function instance.
+// A cold start pays one DB query; all subsequent warm requests skip it.
+let _cachedOwnerId = null;
+
 /**
  * Single-company deployment: all users share one dataset. SaleRecord.ownerId is
  * still a required FK — we anchor it to the first active OWNER (by signup time).
  */
 export async function getCanonicalCompanyOwnerId(prisma) {
+  if (_cachedOwnerId) return _cachedOwnerId;
+
   const owner = await prisma.user.findFirst({
     where: { role: UserRole.OWNER, isActive: true },
     orderBy: { createdAt: "asc" },
@@ -15,7 +21,9 @@ export async function getCanonicalCompanyOwnerId(prisma) {
     err.statusCode = 503;
     throw err;
   }
-  return owner.id;
+
+  _cachedOwnerId = owner.id;
+  return _cachedOwnerId;
 }
 
 /** All active users — for payroll / inventory rollups across the whole company. */

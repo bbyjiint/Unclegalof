@@ -1027,6 +1027,7 @@
   color: var(--green);
   text-decoration: none;
   font-family: "Prompt", sans-serif;
+  margin-bottom: 6px;
 }
 
 .ov-see-all-btn:hover {
@@ -2125,6 +2126,7 @@
 
 .rep-filters-toggle span {
   flex: 1;
+  font-size: 16px;
 }
 
 /* Bottom controls — 2×2 on narrow phones, single row when wide enough */
