@@ -549,21 +549,27 @@
   border-radius: 14px;
   overflow: hidden;
   background: #ffffff;
-  /* Fade 1st and 3rd rows toward edges — 33% = one row height in a 3-row view */
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    black 33%,
-    black 67%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    black 33%,
-    black 67%,
-    transparent 100%
-  );
+}
+
+.rep-date-wheel__mask::before,
+.rep-date-wheel__mask::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--rep-wheel-item-h);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.rep-date-wheel__mask::before {
+  top: 0;
+  background: linear-gradient(to bottom, #ffffff 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.rep-date-wheel__mask::after {
+  bottom: 0;
+  background: linear-gradient(to top, #ffffff 0%, rgba(255, 255, 255, 0) 100%);
 }
 
 /* Selection band — sits behind row 2 of 3 (the middle row) */

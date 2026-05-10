@@ -49,9 +49,13 @@ function MonthYearWheel({ month, year, setMonth, setYear, selectableYears, filte
   );
   const YEAR_CANONICAL = yearLen * 3;
 
+  function jumpToWheelIndex(strip: HTMLDivElement, idx: number) {
+    strip.scrollTop = wheelScrollTopForIndex(idx);
+  }
+
   function teleportMonth(strip: HTMLDivElement, idx: number) {
     mTeleport.current = true;
-    strip.scrollTo({ top: wheelScrollTopForIndex(idx), behavior: "instant" as ScrollBehavior });
+    jumpToWheelIndex(strip, idx);
     setMCenterIdx(idx);
     setTimeout(() => {
       mTeleport.current = false;
@@ -60,7 +64,7 @@ function MonthYearWheel({ month, year, setMonth, setYear, selectableYears, filte
 
   function teleportYear(strip: HTMLDivElement, idx: number) {
     yTeleport.current = true;
-    strip.scrollTo({ top: wheelScrollTopForIndex(idx), behavior: "instant" as ScrollBehavior });
+    jumpToWheelIndex(strip, idx);
     setYCenterIdx(idx);
     setTimeout(() => {
       yTeleport.current = false;
