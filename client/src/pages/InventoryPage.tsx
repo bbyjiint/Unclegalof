@@ -65,7 +65,7 @@ function InventoryCostPositionsCard({ costPositions }: { costPositions: CostPosi
         }}
       >
         <h3 className="inv-section-title" style={{ margin: 0 }}>
-          ต้นทุนคงคลัง (FIFO ต่อล็อต)
+          ต้นทุนคงคลัง (ต่อล็อต)
         </h3>
         {totalStockValue > 0 && (
           <span style={{ fontSize: 13, color: "#334155" }}>

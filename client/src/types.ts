@@ -139,12 +139,14 @@ export interface DeliveryOrderRow {
   id: string;
   orderNumber: string;
   saleDate: string;
+  deliveryCompletedAt?: string | null;
   totalPrice: number;
   customerName: string | null;
   customerPhone: string | null;
   deliveryAddress: string | null;
   productName: string;
   deliveryProofImage?: string | null;
+  deliveryAcknowledgedAt?: string | null;
   deskPhotos?: string[];
   items?: Array<{
     id: string;

@@ -1047,6 +1047,41 @@ router.delete(
     try {
       const { id } = req.params;
 
+      const order = await prisma.salesOrder.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          deliveryProofImage: true,
+          saleRecords: { select: { id: true }, take: 1 },
+        },
+      });
+
+      if (order) {
+        if (!order.deliveryProofImage) {
+          return res
+            .status(400)
+            .json({ error: "Cannot acknowledge delivery when no proof image exists" });
+        }
+
+        const acknowledgedAt = new Date();
+        await prisma.$transaction(async (tx) => {
+          await tx.salesOrder.update({
+            where: { id: order.id },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+          await tx.saleRecord.updateMany({
+            where: { salesOrderId: order.id },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+        });
+
+        res.json({
+          ok: true,
+          deliveryAcknowledgedAt: acknowledgedAt.toISOString(),
+        });
+        return;
+      }
+
       const group = await loadLogicalSaleGroup(prisma, id);
 
       if (!group) {
@@ -1093,6 +1128,90 @@ router.delete(
 
       const includeCost = req.role === UserRole.OWNER;
       res.json(logicalSaleGroupToFrontend(updatedGroup, includeCost));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.patch(
+  "/:id/delivery-acknowledged",
+  authenticate,
+  requireOwner,
+  validate(paramsIdSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      const order = await prisma.salesOrder.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          deliveryProofImage: true,
+        },
+      });
+
+      if (order) {
+        if (!order.deliveryProofImage) {
+          return res
+            .status(400)
+            .json({ error: "Cannot acknowledge delivery when no proof image exists" });
+        }
+
+        const acknowledgedAt = new Date();
+        await prisma.$transaction(async (tx) => {
+          await tx.salesOrder.update({
+            where: { id: order.id },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+          await tx.saleRecord.updateMany({
+            where: { salesOrderId: order.id },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+        });
+
+        res.json({
+          ok: true,
+          deliveryAcknowledgedAt: acknowledgedAt.toISOString(),
+        });
+        return;
+      }
+
+      const group = await loadLogicalSaleGroup(prisma, id);
+
+      if (!group) {
+        return res.status(404).json({ error: "Sale not found" });
+      }
+
+      const currentProof =
+        group.rows[0]?.salesOrder?.deliveryProofImage || group.representative.deliveryProofImage;
+      if (!currentProof) {
+        return res
+          .status(400)
+          .json({ error: "Cannot acknowledge delivery when no proof image exists" });
+      }
+
+      const acknowledgedAt = new Date();
+      if (group.salesOrderId) {
+        await prisma.$transaction(async (tx) => {
+          await tx.salesOrder.update({
+            where: { id: group.salesOrderId },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+          await tx.saleRecord.updateMany({
+            where: { salesOrderId: group.salesOrderId },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+        });
+      } else {
+        await prisma.saleRecord.update({
+          where: { id },
+          data: { deliveryAcknowledgedAt: acknowledgedAt },
+        });
+      }
+
+      const updatedGroup = await loadLogicalSaleGroup(prisma, id);
+      res.json(logicalSaleGroupToFrontend(updatedGroup, true));
     } catch (error) {
       next(error);
     }

@@ -17,6 +17,17 @@ type PendingRepairPhoto = { file: File; url: string };
 
 const MAX_REPAIR_PHOTOS = 8;
 
+const STATUS_LABEL: Record<RepairStatus, string> = {
+  open: "รอซ่อม",
+  inprogress: "กำลังซ่อม",
+  done: "เสร็จแล้ว",
+};
+
+const KIND_LABEL: Record<RepairKind, string> = {
+  repair: "ซ่อม",
+  claim: "เคลม",
+};
+
 type RepairFormState = {
   type: string;
   qty: number;
@@ -309,22 +320,31 @@ export default function RepairPage() {
           </div>
         ) : (
           items.map((item) => (
-            <div key={item.id} className="card">
-              <h3>{item.type}</h3>
+            <div key={item.id} className="card repair-page__item">
+              <div className="repair-page__item-head">
+                <h3 className="repair-page__item-title">{item.type}</h3>
+                <div className="repair-page__item-badges">
+                  <span className={`repair-page__kind repair-page__kind--${item.kind}`}>
+                    {KIND_LABEL[item.kind] ?? item.kind}
+                  </span>
+                  <span className={`repair-page__status repair-page__status--${item.status}`}>
+                    {STATUS_LABEL[item.status] ?? item.status}
+                  </span>
+                </div>
+              </div>
               <div className="sdetail">
                 <span className="with-icon-sm">
                   <Ruler size={12} strokeWidth={2} aria-hidden />
-                  {item.size}
+                  {item.size || "—"}
                 </span>
                 <span className="with-icon-sm">
                   <Palette size={12} strokeWidth={2} aria-hidden />
-                  {item.color}
+                  {item.color || "—"}
                 </span>
                 <span className="with-icon-sm">
                   <Hash size={12} strokeWidth={2} aria-hidden />
                   {item.qty} ชุด
                 </span>
-                <span>{item.status}</span>
               </div>
               <p className="repair-page__reason">{item.reason}</p>
               {(item.images?.length ?? 0) > 0 && (

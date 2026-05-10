@@ -38,7 +38,7 @@ const NAV_ITEMS = [
   { to: "/owner/employees", end: false as const, label: "พนักงาน", Icon: Users, section: "management" as const },
   { to: "/owner/promotions", end: false as const, label: "โปรโมชั่น", Icon: Tag, section: "sales" as const },
   { to: "/owner/purchasing", end: false as const, label: "รับของ / สต็อก", Icon: Package, section: "stock" as const },
-  { to: "/owner/delivery", end: false as const, label: "ค่าจัดส่ง", Icon: MapPin, section: "management" as const }
+  { to: "/owner/delivery", end: false as const, label: "จัดส่ง", Icon: MapPin, section: "management" as const }
 ];
 
 const NAV_SECTIONS: Array<{ id: OwnerNavSection; label: string }> = [
@@ -57,7 +57,7 @@ function pageTitleFromPath(pathname: string): string {
     { prefix: "/owner/employees", title: "พนักงาน" },
     { prefix: "/owner/promotions", title: "โปรโมชั่น" },
     { prefix: "/owner/purchasing", title: "รับของ & สต็อก" },
-    { prefix: "/owner/delivery", title: "ค่าจัดส่ง" },
+    { prefix: "/owner/delivery", title: "จัดส่ง" },
     { prefix: "/owner/reports", title: "รายการขาย" }
   ];
   for (const { prefix, title } of routes) {

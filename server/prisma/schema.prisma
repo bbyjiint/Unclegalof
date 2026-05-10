@@ -160,6 +160,7 @@ model SalesOrder {
   slipViewedAt         DateTime?
   paidAt               DateTime?
   deliveryProofImage   String?           @db.Text
+  deliveryAcknowledgedAt DateTime?
   createdByUserId      String?           @db.Uuid
   createdBy            User?             @relation("SalesOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   deliveryFee          DeliveryFee?      @relation(fields: [deliveryRange], references: [range])
@@ -246,6 +247,7 @@ model SaleRecord {
   slipViewedAt         DateTime?
   paidAt               DateTime?
   deliveryProofImage   String?                @db.Text
+  deliveryAcknowledgedAt DateTime?
   paymentBatchId       String?                @db.Uuid
   salesOrderId         String?                @db.Uuid
   /// User who created this sale row (audit / accountability); not cleared on shared edits.

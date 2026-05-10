@@ -2508,3 +2508,378 @@
 .rep-tbl tr:last-child td {
   border-bottom: none;
 }
+
+/* Owner delivery fee editor */
+.owner-delivery-fees-section {
+  margin-top: 24px;
+}
+
+.owner-delivery-fees-card {
+  overflow-x: auto;
+}
+
+.owner-delivery-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "Prompt", sans-serif;
+  font-size: 14px;
+}
+
+.owner-delivery-table th,
+.owner-delivery-table td {
+  padding: 10px 8px;
+  text-align: left;
+  border-bottom: 1px solid #f2f2f7;
+  vertical-align: middle;
+}
+
+.owner-delivery-table th {
+  font-size: 12px;
+  font-weight: 800;
+  color: #8e8e93;
+  background: #fafafa;
+  white-space: nowrap;
+}
+
+.owner-delivery-table tr:last-child td {
+  border-bottom: none;
+}
+
+.owner-delivery-table td {
+  color: #636366;
+}
+
+.owner-delivery-table__zone {
+  font-weight: 800;
+  color: #1c1c1e !important;
+}
+
+.owner-delivery-table__price {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.owner-delivery-table__input {
+  width: 120px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid #d1d1d6;
+  border-radius: 10px;
+  background: #fff;
+  color: #1c1c1e;
+  font: inherit;
+  font-weight: 700;
+}
+
+.owner-delivery-table__money {
+  font-size: 12px;
+  color: #8e8e93;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .owner-delivery-fees-card {
+    padding: 8px;
+    overflow-x: visible;
+  }
+
+  .owner-delivery-table,
+  .owner-delivery-table tbody,
+  .owner-delivery-table tr,
+  .owner-delivery-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .owner-delivery-table thead {
+    display: none;
+  }
+
+  .owner-delivery-table tbody {
+    display: grid;
+    gap: 6px;
+  }
+
+  .owner-delivery-table tr {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 0.9fr) minmax(0, 1.15fr);
+    grid-template-areas:
+      "zone range price";
+    gap: 6px;
+    align-items: center;
+    padding: 6px;
+    border: 1px solid #edf2f7;
+    border-radius: 12px;
+    background: #fbfcfd;
+  }
+
+  .owner-delivery-table td {
+    padding: 0;
+    border-bottom: none;
+  }
+
+  .owner-delivery-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 1px;
+    font-size: 9px;
+    font-weight: 800;
+    color: #8e8e93;
+    line-height: 1;
+  }
+
+  .owner-delivery-table__zone {
+    grid-area: zone;
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #2563eb !important;
+    font-size: 16px;
+  }
+
+  .owner-delivery-table__zone::before {
+    color: #60a5fa !important;
+  }
+
+  .owner-delivery-table td[data-label="ระยะทาง"] {
+    grid-area: range;
+    font-size: 12px;
+  }
+
+  .owner-delivery-table td[data-label="ค่าจัดส่ง"] {
+    grid-area: price;
+  }
+
+  .owner-delivery-table__price {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+  }
+
+  .owner-delivery-table__input {
+    width: min(76px, 100%);
+    min-height: 30px;
+    padding: 5px 7px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .owner-delivery-table__money {
+    font-size: 10px;
+  }
+}
+
+/* Owner delivery history */
+.owner-delivery-history {
+  margin-top: 24px;
+}
+
+.owner-delivery-history__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.owner-delivery-history__intro {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #636366;
+  line-height: 1.45;
+}
+
+.owner-delivery-history__filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.owner-delivery-history__filter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #636366;
+}
+
+.owner-delivery-history__filter select,
+.owner-delivery-history__filter input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #d1d1d6;
+  border-radius: 10px;
+  background: #fff;
+  color: #1c1c1e;
+  font: inherit;
+  font-weight: 600;
+}
+
+.owner-delivery-history__list {
+  display: grid;
+  gap: 12px;
+}
+
+.owner-delivery-history__card {
+  padding: 14px;
+  border: 1px solid #e5e5ea;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+.owner-delivery-history__card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.owner-delivery-history__order {
+  font-family: "Prompt", sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  color: #1c1c1e;
+}
+
+.owner-delivery-history__date,
+.owner-delivery-history__sale-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: #8e8e93;
+}
+
+.owner-delivery-history__total {
+  flex-shrink: 0;
+  font-family: "Prompt", sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--green);
+}
+
+.owner-delivery-history__meta {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #3a3a3c;
+}
+
+.owner-delivery-history__meta div {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+}
+
+.owner-delivery-history__meta svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #8e8e93;
+}
+
+.owner-delivery-history__meta a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.owner-delivery-history__meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.owner-delivery-history__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #f2f2f7;
+}
+
+.owner-delivery-history__proof-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, #2563eb, transparent 55%);
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-family: "Prompt", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.owner-delivery-history__proof-btn:hover {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.owner-delivery-history__missing-proof {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8e8e93;
+}
+
+.owner-delivery-history__card--acknowledged {
+  opacity: 0.65;
+}
+
+.owner-delivery-history__ack-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.owner-delivery-history__ack-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+  white-space: nowrap;
+}
+
+.owner-delivery-history__ack-badge--done {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+@media (max-width: 520px) {
+  .owner-delivery-history__head,
+  .owner-delivery-history__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .owner-delivery-history__filters {
+    grid-template-columns: 1fr;
+  }
+
+  .owner-delivery-history__proof-btn {
+    width: 100%;
+  }
+}

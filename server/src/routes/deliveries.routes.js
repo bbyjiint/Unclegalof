@@ -14,9 +14,42 @@ const paramsIdSchema = z.object({
   id: z.string().uuid(),
 });
 
+const queryMonthYearSchema = z.object({
+  month: z.coerce.number().int().min(1).max(12),
+  year: z.coerce.number().int().min(2000).max(2100),
+});
+
 const completeBodySchema = z.object({
   proofImageUrl: z.string().url(),
 });
+
+function toIso(value) {
+  return value?.toISOString?.() ?? null;
+}
+
+function orderLineToDeliveryItem(line) {
+  return {
+    id: line.id,
+    deskItemId: line.deskItemId,
+    type: line.deskItem?.name || "",
+    qty: line.quantity ?? 1,
+    price: line.unitPrice ?? 0,
+    grandTotal: line.amount ?? 0,
+    deskPhotos: Array.isArray(line.deskPhotos) ? line.deskPhotos : [],
+  };
+}
+
+function saleRecordToDeliveryItem(row) {
+  return {
+    id: row.id,
+    deskItemId: row.deskType,
+    type: row.deskItem?.name || "",
+    qty: row.quantity ?? 1,
+    price: row.unitPrice ?? 0,
+    grandTotal: row.amount ?? 0,
+    deskPhotos: Array.isArray(row.deskPhotos) ? row.deskPhotos : [],
+  };
+}
 
 /**
  * GET /api/deliveries — OWNER + REPAIRS: pending home deliveries (not yet marked complete).
@@ -51,6 +84,103 @@ router.get("/", authenticate, requireRole(UserRole.OWNER, UserRole.REPAIRS), asy
     next(err);
   }
 });
+
+/**
+ * GET /api/deliveries/history — OWNER: completed home delivery history for selected delivery month.
+ */
+router.get(
+  "/history",
+  authenticate,
+  requireRole(UserRole.OWNER),
+  validate(queryMonthYearSchema, "query"),
+  async (req, res, next) => {
+    try {
+      const month = Number(req.query.month);
+      const year = Number(req.query.year);
+      const start = new Date(Date.UTC(year, month - 1, 1));
+      const end = new Date(Date.UTC(year, month, 1));
+
+      const [orders, legacyRows] = await Promise.all([
+        prisma.salesOrder.findMany({
+          where: {
+            deliveryType: "delivery",
+            deliveryCompletedAt: { gte: start, lt: end },
+          },
+          orderBy: { deliveryCompletedAt: "desc" },
+          take: 400,
+          include: {
+            lines: {
+              include: { deskItem: true },
+              orderBy: { lineNumber: "asc" },
+            },
+          },
+        }),
+        prisma.saleRecord.findMany({
+          where: {
+            salesOrderId: null,
+            deliveryType: "delivery",
+            deliveryCompletedAt: { gte: start, lt: end },
+          },
+          orderBy: { deliveryCompletedAt: "desc" },
+          take: 400,
+          include: { deskItem: true },
+        }),
+      ]);
+
+      const modern = orders.map((order) => {
+        const items = order.lines.map(orderLineToDeliveryItem);
+        const productName = Array.from(new Set(items.map((item) => item.type).filter(Boolean))).join(", ");
+        const deskPhotos = Array.from(new Set([
+          ...(Array.isArray(order.deskPhotos) ? order.deskPhotos : []),
+          ...items.flatMap((item) => item.deskPhotos || []),
+        ]));
+
+        return {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          saleDate: toIso(order.saleDate) ?? new Date().toISOString(),
+          deliveryCompletedAt: toIso(order.deliveryCompletedAt),
+          totalPrice: order.grandTotal,
+          customerName: order.customerName ?? null,
+          customerPhone: order.customerPhone ?? null,
+          deliveryAddress: order.deliveryAddress ?? null,
+          productName,
+          deliveryProofImage: order.deliveryProofImage ?? null,
+          deliveryAcknowledgedAt: toIso(order.deliveryAcknowledgedAt),
+          deskPhotos,
+          items,
+        };
+      });
+
+      const legacy = legacyRows.map((row) => {
+        const item = saleRecordToDeliveryItem(row);
+        return {
+          id: row.id,
+          orderNumber: row.orderNumber,
+          saleDate: toIso(row.saleDate) ?? new Date().toISOString(),
+          deliveryCompletedAt: toIso(row.deliveryCompletedAt),
+          totalPrice: row.amount,
+          customerName: row.customerName ?? null,
+          customerPhone: row.customerPhone ?? null,
+          deliveryAddress: row.deliveryAddress ?? null,
+          productName: item.type,
+          deliveryProofImage: row.deliveryProofImage ?? null,
+          deliveryAcknowledgedAt: toIso(row.deliveryAcknowledgedAt),
+          deskPhotos: Array.isArray(row.deskPhotos) ? row.deskPhotos : [],
+          items: [item],
+        };
+      });
+
+      const rows = [...modern, ...legacy].sort(
+        (a, b) => new Date(b.deliveryCompletedAt || 0).getTime() - new Date(a.deliveryCompletedAt || 0).getTime()
+      );
+
+      res.json({ orders: rows });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 /**
  * PATCH /api/deliveries/:id/complete — mark a delivery order as completed (driver done).
