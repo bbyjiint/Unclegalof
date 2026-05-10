@@ -46,7 +46,8 @@ export default function App() {
 
         <Route element={<ProtectedRoute allowedRoles={["OWNER"]} />}>
           <Route path="/owner" element={<OwnerDashboardLayout />}>
-            <Route index element={<OwnerOverviewTab />} />
+            <Route index element={<Navigate to="/owner/reports" replace />} />
+            <Route path="overview" element={<OwnerOverviewTab />} />
             <Route path="employees" element={<OwnerEmployeesTab />} />
             <Route path="promotions" element={<OwnerPromotionsTab />} />
             <Route path="purchasing" element={<OwnerPurchasingTab />} />

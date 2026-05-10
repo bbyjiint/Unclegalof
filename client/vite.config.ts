@@ -6,6 +6,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    optimizeDeps: {
+      force: true,
+    },
     server: {
       host: "0.0.0.0",
       port: 5173,

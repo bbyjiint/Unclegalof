@@ -2,7 +2,7 @@ import type { UserRole } from "../types";
 
 export function getDefaultRouteForRole(role: UserRole): string {
   if (role === "OWNER") {
-    return "/owner";
+    return "/owner/reports";
   }
 
   if (role === "SALES") {
