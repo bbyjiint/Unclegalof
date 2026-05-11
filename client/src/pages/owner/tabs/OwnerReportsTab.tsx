@@ -1,6 +1,8 @@
-import { ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, FileText, RefreshCw, SlidersHorizontal, X, XCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney } from "../../../data/constants";
+import { api } from "../../../lib/api";
+import type { Sale } from "../../../types";
 import { useOwnerDashboard } from "../ownerDashboardContext";
 
 const MONTH_ABBR = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
@@ -296,13 +298,40 @@ export default function OwnerReportsTab() {
     selectableYears,
     loadPage,
     confirmSalePaid,
-    viewPaymentSlipAndMark,
-    removePaymentSlipByOwner,
     updatingSaleId
   } = useOwnerDashboard();
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const isDesktopReports = useMinWidth(900);
+  const [slipModalSale, setSlipModalSale] = useState<Sale | null>(null);
+
+  async function openSlipModal(sale: Sale): Promise<void> {
+    setSlipModalSale(sale);
+    try {
+      await api.markSaleSlipViewed(sale.id);
+      await loadPage();
+    } catch {
+      // marking viewed is best-effort
+    }
+  }
+
+  async function handleSlipModalConfirm(): Promise<void> {
+    if (!slipModalSale) return;
+    await confirmSalePaid(slipModalSale.id);
+    setSlipModalSale(null);
+  }
+
+  async function handleSlipModalReject(): Promise<void> {
+    if (!slipModalSale) return;
+    if (!window.confirm("ลบสลิปที่แนบไว้รายการนี้?")) return;
+    try {
+      await api.removeSalePaymentSlip(slipModalSale.id);
+      await loadPage();
+    } catch {
+      // ignore
+    }
+    setSlipModalSale(null);
+  }
 
   const batchMap = new Map<string, { total: number; paid: boolean }>();
   for (const sale of filteredAndSortedSales) {
@@ -424,12 +453,6 @@ export default function OwnerReportsTab() {
                     pending: "ค้างชำระ",
                     deposit: "มัดจำ",
                   };
-                  const isUpdating = updatingSaleId === sale.id;
-                  const canConfirm =
-                    sale.payStatus !== "paid" &&
-                    !!sale.paymentSlipImage &&
-                    !!sale.slipViewedAt &&
-                    !isUpdating;
 
                   return (
                     <div className="rep-card" key={sale.id}>
@@ -444,7 +467,7 @@ export default function OwnerReportsTab() {
                               : ""}
                           </div>
                         </div>
-                        <div className="rep-card__total">{formatMoney(sale.grandTotal)}</div>
+                        <div className="rep-card__total">{formatMoney(sale.ownerNet ?? sale.grandTotal)}</div>
                       </div>
 
                       <div className="rep-card__badges">
@@ -463,39 +486,31 @@ export default function OwnerReportsTab() {
                         </div>
                       ) : null}
 
-                      <div className="rep-card__actions">
-                        {sale.paymentSlipImage ? (
-                          <>
+                      {sale.paymentSlipImage ? (
+                        <div className="rep-card__actions">
+                          {sale.slipViewedAt ? (
                             <button
                               type="button"
-                              className="rep-btn rep-btn--view"
-                              onClick={() => void viewPaymentSlipAndMark(sale.id, sale.paymentSlipImage!)}
+                              className="sale-slip-link sale-slip-link--rep-card"
+                              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(46,125,50,0.12)", color: "#1b5e20" }}
+                              onClick={() => void openSlipModal(sale)}
                             >
+                              <FileText size={14} strokeWidth={2} aria-hidden />
+                              ดูอีกครั้ง
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="sale-slip-link sale-slip-link--rep-card"
+                              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                              onClick={() => void openSlipModal(sale)}
+                            >
+                              <FileText size={14} strokeWidth={2} aria-hidden />
                               ดูสลิป
                             </button>
-                            <button
-                              type="button"
-                              className="rep-btn rep-btn--danger"
-                              onClick={() => void removePaymentSlipByOwner(sale.id)}
-                              disabled={isUpdating}
-                            >
-                              ลบสลิป
-                            </button>
-                          </>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="rep-btn rep-btn--confirm"
-                          disabled={!canConfirm}
-                          onClick={() => void confirmSalePaid(sale.id)}
-                        >
-                          {sale.payStatus === "paid"
-                            ? "ชำระแล้ว"
-                            : isUpdating
-                              ? "กำลังอัปเดต..."
-                              : "ยืนยันชำระ"}
-                        </button>
-                      </div>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -508,130 +523,170 @@ export default function OwnerReportsTab() {
               {/* ── Desktop: full table ── */}
               <div className="rep-tbl">
                 <table>
-              <thead>
-                <tr>
-                  <th>ออเดอร์</th>
-                  <th>สินค้า</th>
-                  <th>ชุด</th>
-                  <th>ยอดรวม</th>
-                  <th>ต้นทุนเฉลี่ย/ชิ้น</th>
-                  <th>กำไรขาย</th>
-                  <th>สถานะ</th>
-                  <th>Batch</th>
-                  <th>ผู้บันทึก</th>
-                  <th>สลิป/ยืนยัน</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredAndSortedSales.map((sale) => (
-                  <tr key={sale.id}>
-                    <td>{sale.orderNumber}</td>
-                    <td>{sale.type}</td>
-                    <td>{sale.qty}</td>
-                    <td>{formatMoney(sale.grandTotal)}</td>
-                    <td className="csub" style={{ fontSize: 12 }}>
-                      {sale.avgUnitCost != null ? formatMoney(sale.avgUnitCost) : "—"}
-                    </td>
-                    <td className="csub" style={{ fontSize: 12 }}>
-                      {sale.grossProfit != null ? formatMoney(sale.grossProfit) : "—"}
-                    </td>
-                    <td>{sale.payStatus}</td>
-                    <td>
-                      {sale.paymentBatchNumber ? (
-                        <div>
-                          <div style={{ fontWeight: 600, color: "#1d4ed8" }}>{sale.paymentBatchNumber}</div>
-                          <div className="csub" style={{ fontSize: 11 }}>
-                            ยอดที่คาดว่าจะได้รับ {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
-                          </div>
-                        </div>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td>
-                      <div>{sale.createdByName || sale.createdByUsername || "—"}</div>
-                      {sale.recordedAt ? (
-                        <div className="csub" style={{ fontSize: 11 }}>
-                          {new Date(sale.recordedAt).toLocaleString("th-TH", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
-                        {sale.paymentSlipImage ? (
-                          <>
-                            <button
-                              type="button"
-                              className="btnok"
-                              style={{ padding: "8px 12px", fontSize: 13, minHeight: 44 }}
-                              onClick={() => void viewPaymentSlipAndMark(sale.id, sale.paymentSlipImage!)}
-                            >
-                              ดูสลิป
-                            </button>
-                            <button
-                              type="button"
-                              className="owner-dash__btn-danger"
-                              onClick={() => void removePaymentSlipByOwner(sale.id)}
-                              disabled={updatingSaleId === sale.id}
-                            >
-                              ลบสลิป
-                            </button>
-                          </>
-                        ) : (
-                          <span style={{ opacity: 0.7, fontSize: 13 }}>ไม่มีสลิป</span>
-                        )}
-                        <button
-                          type="button"
-                          className="btnok"
-                          style={{ padding: "8px 12px", fontSize: 13, minHeight: 44 }}
-                          disabled={
-                            sale.payStatus === "paid" ||
-                            !sale.paymentSlipImage ||
-                            !sale.slipViewedAt ||
-                            updatingSaleId === sale.id
-                          }
-                          onClick={() => void confirmSalePaid(sale.id)}
-                        >
-                          {sale.payStatus === "paid"
-                            ? "ชำระแล้ว"
-                            : updatingSaleId === sale.id
-                              ? "กำลังอัปเดต..."
-                              : "ยืนยันชำระ"}
-                        </button>
-                      </div>
-                      <div style={{ marginTop: 6, textAlign: "center" }}>
-                        <span
-                          style={{
-                            display: "inline-block",
-                            fontSize: 12,
-                            fontWeight: 600,
-                            padding: "4px 10px",
-                            borderRadius: 8,
-                            background: !sale.paymentSlipImage
-                              ? "rgba(128,128,128,0.12)"
-                              : sale.slipViewedAt
-                                ? "rgba(46,125,50,0.14)"
-                                : "rgba(245,124,0,0.16)",
-                            color: !sale.paymentSlipImage ? "#666" : sale.slipViewedAt ? "#1b5e20" : "#b45309",
-                          }}
-                        >
-                          {!sale.paymentSlipImage
-                            ? "ยังไม่มีสลิป"
-                            : sale.slipViewedAt
-                              ? "ดูสลิปแล้ว"
-                              : "ยังไม่ดูสลิป"}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+                  <thead>
+                    <tr>
+                      <th>ออเดอร์</th>
+                      <th>สินค้า</th>
+                      <th>ชุด</th>
+                      <th>เจ้าของได้</th>
+                      <th>ต้นทุน/ชิ้น</th>
+                      <th>กำไร</th>
+                      <th>สถานะ</th>
+                      <th>Batch</th>
+                      <th>ผู้บันทึก</th>
+                      <th>สลิป</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAndSortedSales.map((sale) => {
+                      const payLabel: Record<string, string> = { paid: "ชำระแล้ว", pending: "ค้างชำระ", deposit: "มัดจำ" };
+
+                      return (
+                        <tr key={sale.id}>
+                          <td>{sale.orderNumber}</td>
+                          <td>{sale.type}</td>
+                          <td>{sale.qty}</td>
+                          <td>{formatMoney(sale.ownerNet ?? sale.grandTotal)}</td>
+                          <td className="csub" style={{ fontSize: 12 }}>
+                            {sale.avgUnitCost != null ? formatMoney(sale.avgUnitCost) : "—"}
+                          </td>
+                          <td className="csub" style={{ fontSize: 12 }}>
+                            {sale.grossProfit != null ? formatMoney(sale.grossProfit) : "—"}
+                          </td>
+                          <td>
+                            <span className={`rep-badge rep-badge--${sale.payStatus}`}>
+                              {payLabel[sale.payStatus] ?? sale.payStatus}
+                            </span>
+                          </td>
+                          <td>
+                            {sale.paymentBatchNumber ? (
+                              <div>
+                                <div style={{ fontWeight: 600, color: "#1d4ed8" }}>{sale.paymentBatchNumber}</div>
+                                <div className="csub" style={{ fontSize: 11 }}>
+                                  {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
+                                </div>
+                              </div>
+                            ) : "—"}
+                          </td>
+                          <td>
+                            <div>{sale.createdByName || sale.createdByUsername || "—"}</div>
+                            {sale.recordedAt ? (
+                              <div className="csub" style={{ fontSize: 11 }}>
+                                {new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            {!sale.paymentSlipImage ? (
+                              <span className="rep-badge rep-badge--no-slip">ยังไม่มีสลิป</span>
+                            ) : sale.slipViewedAt ? (
+                              <button
+                                type="button"
+                                className="sale-slip-link"
+                                style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(46,125,50,0.12)", color: "#1b5e20" }}
+                                onClick={() => void openSlipModal(sale)}
+                              >
+                                <FileText size={13} strokeWidth={2} aria-hidden />
+                                ดูอีกครั้ง
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="sale-slip-link"
+                                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                                onClick={() => void openSlipModal(sale)}
+                              >
+                                <FileText size={13} strokeWidth={2} aria-hidden />
+                                ดูสลิป
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
                 </table>
               </div>
             </>
+          ) : null}
+
+          {slipModalSale?.paymentSlipImage ? (
+            <div
+              style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+              onClick={() => setSlipModalSale(null)}
+            >
+              <div
+                style={{ background: "#fff", borderRadius: 16, width: 440, maxWidth: "96vw", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "hidden" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px", borderBottom: "1px solid #f0f0f0" }}>
+                  <FileText size={18} strokeWidth={2} color="#1d4ed8" aria-hidden />
+                  <span style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>สลิปการชำระเงิน</span>
+                  <button
+                    type="button"
+                    onClick={() => setSlipModalSale(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", padding: 4, display: "flex" }}
+                    aria-label="ปิด"
+                  >
+                    <X size={20} strokeWidth={2} />
+                  </button>
+                </div>
+
+                <div style={{ padding: "14px 16px 0" }}>
+                  <div style={{ background: "#f5f5f7", borderRadius: 12, padding: 12, display: "flex", justifyContent: "center", alignItems: "center", minHeight: 160 }}>
+                    <img
+                      src={slipModalSale.paymentSlipImage}
+                      alt="สลิปโอนเงิน"
+                      style={{ maxWidth: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 8 }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ padding: "12px 20px", fontSize: 13, color: "#334155", lineHeight: 1.9 }}>
+                  <div>ออเดอร์: <strong>{slipModalSale.orderNumber}</strong></div>
+                  <div>ยอด: <strong style={{ color: "#1b5e20" }}>{formatMoney(slipModalSale.ownerNet ?? slipModalSale.grandTotal)}</strong></div>
+                  {slipModalSale.recordedAt ? (
+                    <div>เวลา: {new Date(slipModalSale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</div>
+                  ) : null}
+                  {slipModalSale.paymentBatchNumber ? (
+                    <div>Batch: <strong style={{ color: "#1d4ed8" }}>{slipModalSale.paymentBatchNumber}</strong></div>
+                  ) : null}
+                </div>
+
+                <div style={{ display: "flex", gap: 8, padding: "0 16px 16px" }}>
+                  <button
+                    type="button"
+                    style={{
+                      flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      background: slipModalSale.payStatus === "paid" ? "#e2e8f0" : "#16a34a",
+                      color: slipModalSale.payStatus === "paid" ? "#64748b" : "#fff",
+                      border: "none", borderRadius: 10, padding: "11px 0", fontSize: 14, fontWeight: 700,
+                      cursor: slipModalSale.payStatus === "paid" ? "default" : "pointer",
+                      fontFamily: "inherit",
+                    }}
+                    disabled={slipModalSale.payStatus === "paid" || updatingSaleId === slipModalSale.id}
+                    onClick={() => void handleSlipModalConfirm()}
+                  >
+                    <CheckCircle2 size={16} strokeWidth={2.5} aria-hidden />
+                    {slipModalSale.payStatus === "paid" ? "ชำระแล้ว" : "ยืนยันชำระ"}
+                  </button>
+                  <button
+                    type="button"
+                    style={{
+                      flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      background: "#dc2626", color: "#fff",
+                      border: "none", borderRadius: 10, padding: "11px 0", fontSize: 14, fontWeight: 700,
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}
+                    disabled={updatingSaleId === slipModalSale.id}
+                    onClick={() => void handleSlipModalReject()}
+                  >
+                    <XCircle size={16} strokeWidth={2.5} aria-hidden />
+                    ปฏิเสธ
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : null}
         </>
       )}

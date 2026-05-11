@@ -79,14 +79,14 @@ function InventoryCostPositionsCard({ costPositions }: { costPositions: CostPosi
         )}
       </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 10 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "clamp(10px, 3.2vw, 13px)", marginTop: 10 }}>
         <thead>
           <tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0", color: "#64748b" }}>
-            <th style={{ padding: "6px 8px" }}>สินค้า</th>
-            <th style={{ padding: "6px 8px" }}>วันที่รับ</th>
-            <th style={{ padding: "6px 8px", textAlign: "right" }}>คงคลัง</th>
-            <th style={{ padding: "6px 8px", textAlign: "right" }}>ต้นทุน/ชิ้น</th>
-            <th style={{ padding: "6px 8px", textAlign: "right" }}>มูลค่าล็อต</th>
+            <th style={{ padding: "6px 4px" }}>สินค้า</th>
+            <th style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>วันที่รับ</th>
+            <th style={{ padding: "6px 4px", textAlign: "right", whiteSpace: "nowrap" }}>คงคลัง</th>
+            <th style={{ padding: "6px 4px", textAlign: "right", whiteSpace: "nowrap" }}>ต้นทุน/ชิ้น</th>
+            <th style={{ padding: "6px 4px", textAlign: "right", whiteSpace: "nowrap" }}>มูลค่าล็อต</th>
           </tr>
         </thead>
         <tbody>
@@ -94,11 +94,11 @@ function InventoryCostPositionsCard({ costPositions }: { costPositions: CostPosi
             if (product.lots.length === 0) {
               return (
                 <tr key={product.deskItemId} style={{ borderBottom: "1px solid #f1f5f9", color: "#94a3b8" }}>
-                  <td style={{ padding: "7px 8px" }}>{product.name}</td>
-                  <td style={{ padding: "7px 8px" }}>—</td>
-                  <td style={{ padding: "7px 8px", textAlign: "right" }}>0</td>
-                  <td style={{ padding: "7px 8px", textAlign: "right" }}>—</td>
-                  <td style={{ padding: "7px 8px", textAlign: "right" }}>—</td>
+                  <td style={{ padding: "7px 4px" }}>{product.name}</td>
+                  <td style={{ padding: "7px 4px" }}>—</td>
+                  <td style={{ padding: "7px 4px", textAlign: "right" }}>0</td>
+                  <td style={{ padding: "7px 4px", textAlign: "right" }}>—</td>
+                  <td style={{ padding: "7px 4px", textAlign: "right" }}>—</td>
                 </tr>
               );
             }
@@ -112,7 +112,7 @@ function InventoryCostPositionsCard({ costPositions }: { costPositions: CostPosi
                   key={lot.id}
                   style={{ borderBottom: isLastLot ? "1px solid #cbd5e1" : "1px solid #f1f5f9" }}
                 >
-                  <td style={{ padding: "7px 8px" }}>
+                  <td style={{ padding: "7px 4px" }}>
                     {isFirst ? (
                       <span>
                         {product.name}
@@ -126,7 +126,7 @@ function InventoryCostPositionsCard({ costPositions }: { costPositions: CostPosi
                       <span style={{ color: "#cbd5e1", paddingLeft: 10 }}>↳</span>
                     )}
                   </td>
-                  <td style={{ padding: "7px 8px", color: "#64748b", fontSize: 12 }}>
+                  <td style={{ padding: "7px 4px", color: "#64748b", fontSize: 12, whiteSpace: "nowrap" }}>
                     {isFirst && (
                       <span
                         style={{
@@ -144,17 +144,17 @@ function InventoryCostPositionsCard({ costPositions }: { costPositions: CostPosi
                     )}
                     {formatLotDate(lot.receivedAt)}
                   </td>
-                  <td style={{ padding: "7px 8px", textAlign: "right" }}>{lot.remainingQty}</td>
-                  <td style={{ padding: "7px 8px", textAlign: "right" }}>
+                  <td style={{ padding: "7px 4px", textAlign: "right" }}>{lot.remainingQty}</td>
+                  <td style={{ padding: "7px 4px", textAlign: "right" }}>
                     {lot.costPerUnit === 0 ? (
-                      <span style={{ fontSize: 11, background: "#fef3c7", color: "#d97706", borderRadius: 4, padding: "1px 5px" }}>
+                      <span style={{ fontSize: "clamp(8px, 2.7vw, 11px)", background: "#fef3c7", color: "#d97706", borderRadius: 4, padding: "1px 4px", whiteSpace: "nowrap" }}>
                         รอกรอก
                       </span>
                     ) : (
                       formatMoney(lot.costPerUnit)
                     )}
                   </td>
-                  <td style={{ padding: "7px 8px", textAlign: "right" }}>
+                  <td style={{ padding: "7px 4px", textAlign: "right" }}>
                     {lot.totalValue > 0 ? formatMoney(lot.totalValue) : <span style={{ color: "#94a3b8" }}>—</span>}
                   </td>
                 </tr>
