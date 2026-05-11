@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   ArrowLeft,
-  Camera,
   ChevronDown,
   ClipboardList,
   FileUp,
@@ -13,6 +12,7 @@ import {
   PlusCircle,
   Save,
   Truck,
+  Upload,
   Warehouse,
   Wallet,
   X
@@ -85,6 +85,7 @@ type LightboxState = {
 type StaffView = "home" | "newOrder" | "salesList";
 
 const MAX_SALE_PHOTOS = 4;
+const MAX_UPLOAD_FILE_BYTES = 5 * 1024 * 1024;
 const SALE_PHOTO_BLOCK_START = "[SALE_PHOTOS]";
 const SALE_PHOTO_BLOCK_END = "[/SALE_PHOTOS]";
 
@@ -164,6 +165,7 @@ export default function StaffPage() {
   const today = new Date().toISOString().slice(0, 10);
   const paymentSlipInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const salePhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const newOrderSlipInputRef = useRef<HTMLInputElement | null>(null);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -190,8 +192,9 @@ export default function StaffPage() {
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
-  const hasPendingSalePhotos = newSalePhotos.length > 0;
-
+  const [pendingPaymentSlipFile, setPendingPaymentSlipFile] = useState<File | null>(null);
+  const [attachmentDragActive, setAttachmentDragActive] = useState(false);
+  const [paymentSlipDragActive, setPaymentSlipDragActive] = useState(false);
   async function loadPage(): Promise<void> {
     setLoading(true);
     try {
@@ -221,6 +224,12 @@ export default function StaffPage() {
   useEffect(() => {
     void loadPage();
   }, []);
+
+  useEffect(() => {
+    if (view !== "newOrder") {
+      setPendingPaymentSlipFile(null);
+    }
+  }, [view]);
 
   const pickProduct = useMemo(
     () => products.find((p) => p.id === pickDeskItemId) || null,
@@ -309,7 +318,7 @@ export default function StaffPage() {
       return "มัดจำแล้ว";
     }
 
-    return "ค้างชำระ";
+    return "รอดำเนินการ";
   }
 
   function addPickerToOrder(): void {
@@ -388,9 +397,17 @@ export default function StaffPage() {
     salePhotoInputRef.current?.click();
   }
 
-  function handleSalePhotosSelected(event: ChangeEvent<HTMLInputElement>): void {
-    const picked = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/"));
-    event.target.value = "";
+  function openNewOrderSlipPicker(): void {
+    newOrderSlipInputRef.current?.click();
+  }
+
+  function appendNewSalePhotosFromFiles(files: File[]): void {
+    const picked = files.filter((file) => file.type.startsWith("image/"));
+    const oversize = picked.find((f) => f.size > MAX_UPLOAD_FILE_BYTES);
+    if (oversize) {
+      alert("แต่ละไฟล์ต้องไม่เกิน 5MB");
+      return;
+    }
     if (picked.length === 0) {
       return;
     }
@@ -407,6 +424,34 @@ export default function StaffPage() {
       }));
       return [...current, ...nextPhotos];
     });
+  }
+
+  function handleSalePhotosSelected(event: ChangeEvent<HTMLInputElement>): void {
+    const picked = Array.from(event.target.files || []);
+    event.target.value = "";
+    appendNewSalePhotosFromFiles(picked);
+  }
+
+  function assignPendingPaymentSlip(file: File | null): void {
+    if (!file) {
+      setPendingPaymentSlipFile(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      alert("กรุณาเลือกไฟล์รูปภาพสำหรับสลิป");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_FILE_BYTES) {
+      alert("ไฟล์สลิปต้องไม่เกิน 5MB");
+      return;
+    }
+    setPendingPaymentSlipFile(file);
+  }
+
+  function handleNewOrderSlipSelected(event: ChangeEvent<HTMLInputElement>): void {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    assignPendingPaymentSlip(file);
   }
 
   function removeSalePhoto(index: number): void {
@@ -473,6 +518,8 @@ export default function StaffPage() {
     }
 
     try {
+      const slipToUpload = pendingPaymentSlipFile;
+
       const linePhotoEntries = await Promise.all(
         lineItems.map(async (line) => ({
           rowId: line.rowId,
@@ -484,7 +531,7 @@ export default function StaffPage() {
       );
       const photoUrlsByRowId = new Map(linePhotoEntries.map((entry) => [entry.rowId, entry.urls]));
 
-      await api.createSale({
+      const created = (await api.createSale({
         date: form.date,
         items: lineItems.map((line) => ({
           deskItemId: line.deskItemId,
@@ -507,7 +554,22 @@ export default function StaffPage() {
         wFee: workerFee,
         wType: form.delivery === "delivery" ? "po" : "ice",
         promoId: form.promoId || null
-      });
+      })) as Sale;
+
+      if (slipToUpload) {
+        try {
+          const fileUrl = await uploadFileToR2(slipToUpload, "PAYMENT_SLIP");
+          await api.uploadSalePaymentSlip(created.id, { fileUrl });
+        } catch (slipErr) {
+          console.error("Payment slip upload after create failed:", slipErr);
+          alert(
+            "บันทึกการขายสำเร็จแล้ว แต่แนบสลิปไม่สำเร็จ — กรุณาเปิดรายการแล้วแนบสลิปจากเมนูรายละเอียด"
+          );
+        }
+      }
+
+      setPendingPaymentSlipFile(null);
+
       form.items.forEach((line) => line.photos.forEach((photo) => URL.revokeObjectURL(photo.url)));
       newSalePhotos.forEach((photo) => URL.revokeObjectURL(photo.url));
       setNewSalePhotos([]);
@@ -636,7 +698,7 @@ export default function StaffPage() {
   }
 
   return (
-    <main className="wrap staff-page">
+    <main className={`wrap staff-page${view === "newOrder" ? " staff-page--new-order" : ""}`}>
       {view !== "home" ? (
         <button type="button" className="staff-page-back-btn" onClick={() => setView("home")} aria-label="กลับหน้าหลัก">
           <ArrowLeft size={16} strokeWidth={2} aria-hidden />
@@ -783,135 +845,92 @@ export default function StaffPage() {
       ) : null}
 
       {view === "newOrder" ? (
-      <form className="card staff-sale-form" onSubmit={handleSubmit}>
-        <h3 className="h-with-icon">
-          <PlusCircle size={20} strokeWidth={2} aria-hidden />
-          บันทึกการขาย
-        </h3>
-        <div className="frow">
-          <div className="fg">
-            <label>วันที่ขาย</label>
-            <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
-          </div>
-        </div>
+      <form className="staff-sale-form" onSubmit={handleSubmit}>
+        <input
+          ref={salePhotoInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="sr-only"
+          tabIndex={-1}
+          onChange={handleSalePhotosSelected}
+        />
+        <input
+          ref={newOrderSlipInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          tabIndex={-1}
+          onChange={handleNewOrderSlipSelected}
+        />
 
-        <div className="staff-order-picker">
-          <div className="staff-order-picker__title">เลือกสินค้า</div>
-          {/* Full-width product dropdown */}
-          <div className="fg" style={{ marginBottom: 10 }}>
-            <label>ประเภทโต๊ะ</label>
-            <select
-              value={pickDeskItemId}
-              onChange={(e) => setPickDeskItemId(e.target.value)}
-              disabled={products.length === 0}
-            >
-              <option value="">-- เลือกประเภท --</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {product.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {/* Qty + Price side by side */}
-          <div className="frow frow--2col" style={{ marginBottom: 0 }}>
+        <section className="staff-sale-card" aria-labelledby="staff-sale-card-order-title">
+          <header className="staff-sale-card__header">
+            <h3 id="staff-sale-card-order-title" className="staff-sale-card__title h-with-icon">
+              <PlusCircle size={20} strokeWidth={2} aria-hidden />
+              บันทึกการขาย
+            </h3>
+            <p className="staff-sale-card__subtitle">กรอกวันที่ เลือกสินค้า และตรวจรายการในออเดอร์ก่อนบันทึก</p>
+          </header>
+
+          <div className="frow">
             <div className="fg">
-              <label>จำนวน (ชุด)</label>
-              <input
-                type="number"
-                min={1}
-                value={pickQty}
-                onChange={(e) => setPickQty(Number(e.target.value) || 1)}
+              <label>วันที่ขาย</label>
+              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
+            </div>
+          </div>
+
+          <div className="staff-order-picker">
+            <div className="staff-order-picker__title">เลือกสินค้า</div>
+            <div className="fg" style={{ marginBottom: 10 }}>
+              <label>ประเภทโต๊ะ</label>
+              <select
+                value={pickDeskItemId}
+                onChange={(e) => setPickDeskItemId(e.target.value)}
                 disabled={products.length === 0}
-              />
+              >
+                <option value="">-- เลือกประเภท --</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="fg">
-              <label>ราคาต่อชุด (บาท)</label>
-              <input
-                type="number"
-                value={pickPrice}
-                readOnly
-                tabIndex={-1}
-                style={{ pointerEvents: "none", background: "#f8fafc", color: "#334155" }}
-              />
+            <div className="frow frow--2col" style={{ marginBottom: 0 }}>
+              <div className="fg">
+                <label>จำนวน (ชุด)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={pickQty}
+                  onChange={(e) => setPickQty(Number(e.target.value) || 1)}
+                  disabled={products.length === 0}
+                />
+              </div>
+              <div className="fg">
+                <label>ราคาต่อชุด (บาท)</label>
+                <input
+                  type="number"
+                  value={pickPrice}
+                  readOnly
+                  tabIndex={-1}
+                  style={{ pointerEvents: "none", background: "#f8fafc", color: "#334155" }}
+                />
+              </div>
             </div>
-          </div>
-          <div className="staff-order-picker__action">
-            <button
-              type="button"
-              className="picker-add-btn"
-              disabled={!pickDeskItemId || !pickProduct || pickPrice === "" || products.length === 0}
-              onClick={addPickerToOrder}
-            >
-              <Plus size={16} strokeWidth={2.5} aria-hidden />
-              เพิ่มลงในออเดอร์
-            </button>
-          </div>
-          <div className="staff-order-picker__photos">
-            <label className="staff-order-picker__photos-label">แนบรูปสินค้า/หน้างาน</label>
-            <input
-              ref={salePhotoInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              style={{ display: "none" }}
-              onChange={handleSalePhotosSelected}
-            />
-            {newSalePhotos.length === 0 ? (
+            <div className="staff-order-picker__action">
               <button
                 type="button"
-                className="staff-order-picker__photos-placeholder"
-                onClick={openSalePhotoPicker}
+                className="picker-add-btn"
+                disabled={!pickDeskItemId || !pickProduct || pickPrice === "" || products.length === 0}
+                onClick={addPickerToOrder}
               >
-                <Camera size={32} strokeWidth={1.5} className="staff-order-picker__photos-placeholder-icon" aria-hidden />
-                <span className="staff-order-picker__photos-placeholder-text">เลือกรูป</span>
-                <span className="staff-order-picker__photos-hint">แนบได้สูงสุด {MAX_SALE_PHOTOS} รูป สำหรับรูปสินค้า/หน้างาน</span>
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                เพิ่มลงในออเดอร์
               </button>
-            ) : (
-              <div className="staff-order-picker__photos-toolbar">
-                <button
-                  type="button"
-                  className="sale-action-btn"
-                  onClick={openSalePhotoPicker}
-                  disabled={newSalePhotos.length >= MAX_SALE_PHOTOS}
-                >
-                  <ImagePlus size={16} strokeWidth={2} aria-hidden />
-                  เพิ่มรูป ({newSalePhotos.length}/{MAX_SALE_PHOTOS})
-                </button>
-                <span className="staff-order-picker__photos-hint">
-                  แนบได้สูงสุด {MAX_SALE_PHOTOS} รูป
-                </span>
-              </div>
-            )}
-            {newSalePhotos.length > 0 ? (
-              <div className="staff-order-picker__photos-grid">
-                {newSalePhotos.map((photo, index) => (
-                  <div key={`${photo.file.name}-${index}`} className="staff-order-picker__photo-card">
-                    <button
-                      type="button"
-                      onClick={() => openImageLightbox(newSalePhotos.map((item) => item.url), index)}
-                      className="staff-order-picker__photo-preview-btn"
-                      aria-label={`ดูรูปที่ ${index + 1}`}
-                    >
-                      <img
-                        src={photo.url}
-                        alt={`รูปออเดอร์ ${index + 1}`}
-                        className="staff-order-picker__photo-img"
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      className="sale-slip-link sale-slip-link--staff staff-order-picker__photo-remove"
-                      onClick={() => removeSalePhoto(index)}
-                    >
-                      ลบรูป
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            </div>
           </div>
-        </div>
 
         <div className="staff-order-cart">
           <h4 className="h-with-icon" style={{ fontSize: 14, marginBottom: 10 }}>
@@ -999,18 +1018,205 @@ export default function StaffPage() {
             </div>
           )}
         </div>
+        </section>
 
-        <section className="staff-sale-form__section">
-          <div className="staff-sale-form__section-title">การชำระเงินและส่วนลด</div>
-          <div className="frow">
-            <div className="fg">
-              <label>สถานะชำระเงิน</label>
-              <select value={form.pay} onChange={(e) => setForm({ ...form, pay: e.target.value as PayStatus })}>
-                <option value="paid">ชำระแล้ว</option>
-                <option value="pending">ค้างชำระ</option>
-                <option value="deposit">มัดจำแล้ว</option>
-              </select>
+        <section className="staff-sale-card staff-sale-card--attachments" aria-labelledby="staff-sale-card-attach-title">
+          <header className="staff-sale-card__header">
+            <h3 id="staff-sale-card-attach-title" className="staff-sale-card__title">
+              แนบรูปสินค้า/หน้างาน
+            </h3>
+          </header>
+
+          <div className="fg staff-sale-card__field-gap staff-sale-card__field-gap--tight-top">
+            <label id="staff-attach-drop-label">รูปสินค้า / หน้างาน</label>
+            <div
+              className={`staff-dropzone staff-dropzone--compact${attachmentDragActive ? " staff-dropzone--active" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-labelledby="staff-attach-drop-label"
+              onClick={() => openSalePhotoPicker()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openSalePhotoPicker();
+                }
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setAttachmentDragActive(true);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setAttachmentDragActive(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setAttachmentDragActive(false);
+                appendNewSalePhotosFromFiles(Array.from(e.dataTransfer.files || []));
+              }}
+            >
+              <span className="staff-dropzone__icon-wrap" aria-hidden>
+                <Upload size={22} strokeWidth={2} />
+              </span>
+              <span className="staff-dropzone__lead">ลากและวางไฟล์ที่นี่</span>
+              <span className="staff-dropzone__hint">
+                หรือคลิกเพื่อเลือกไฟล์ (สูงสุด {MAX_SALE_PHOTOS} ไฟล์, ไม่เกิน 5MB ต่อไฟล์)
+              </span>
             </div>
+          </div>
+          {newSalePhotos.length > 0 ? (
+            <div className="staff-attach-gallery">
+              <div className="staff-order-picker__photos-toolbar" style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="sale-action-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openSalePhotoPicker();
+                  }}
+                  disabled={newSalePhotos.length >= MAX_SALE_PHOTOS}
+                >
+                  <ImagePlus size={16} strokeWidth={2} aria-hidden />
+                  เพิ่มรูป ({newSalePhotos.length}/{MAX_SALE_PHOTOS})
+                </button>
+              </div>
+              <div className="staff-order-picker__photos-grid" style={{ marginTop: 8 }}>
+                {newSalePhotos.map((photo, index) => (
+                  <div key={`${photo.file.name}-${index}`} className="staff-order-picker__photo-card">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openImageLightbox(
+                          newSalePhotos.map((item) => item.url),
+                          index
+                        );
+                      }}
+                      className="staff-order-picker__photo-preview-btn"
+                      aria-label={`ดูรูปที่ ${index + 1}`}
+                    >
+                      <img
+                        src={photo.url}
+                        alt={`รูปออเดอร์ ${index + 1}`}
+                        className="staff-order-picker__photo-img"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      className="sale-slip-link sale-slip-link--staff staff-order-picker__photo-remove"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeSalePhoto(index);
+                      }}
+                    >
+                      ลบรูป
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="staff-sale-card staff-sale-card--payment" aria-labelledby="staff-sale-card-pay-title">
+          <header className="staff-sale-card__header">
+            <h3 id="staff-sale-card-pay-title" className="staff-sale-card__title">การชำระเงิน</h3>
+          </header>
+
+          <div className="fg staff-sale-card__field-gap">
+            <label htmlFor="staff-new-order-pay-status">สถานะการชำระเงิน</label>
+            <select
+              id="staff-new-order-pay-status"
+              value={form.pay}
+              onChange={(e) => setForm({ ...form, pay: e.target.value as PayStatus })}
+              className="staff-sale-card__select"
+            >
+              <option value="pending">รอดำเนินการ</option>
+              <option value="paid">ชำระแล้ว</option>
+              <option value="deposit">มัดจำแล้ว</option>
+            </select>
+          </div>
+
+          <div className="fg staff-sale-card__field-gap staff-sale-card__field-gap--tight-top">
+            <label id="staff-slip-drop-label">หลักฐานการชำระเงิน</label>
+            <div
+              className={`staff-dropzone staff-dropzone--compact${paymentSlipDragActive ? " staff-dropzone--active" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-labelledby="staff-slip-drop-label"
+              onClick={(e) => {
+                const t = e.target as HTMLElement | null;
+                if (t?.closest(".staff-slip-picked-bar__clear")) {
+                  return;
+                }
+                openNewOrderSlipPicker();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openNewOrderSlipPicker();
+                }
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPaymentSlipDragActive(true);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPaymentSlipDragActive(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPaymentSlipDragActive(false);
+                const file = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith("image/"))[0];
+                assignPendingPaymentSlip(file ?? null);
+              }}
+            >
+              {pendingPaymentSlipFile ? (
+                <div className="staff-slip-picked-bar">
+                  <span className="staff-slip-picked-bar__name" title={pendingPaymentSlipFile.name}>
+                    {pendingPaymentSlipFile.name}
+                  </span>
+                  <button
+                    type="button"
+                    className="staff-slip-picked-bar__clear"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      assignPendingPaymentSlip(null);
+                    }}
+                  >
+                    ลบ
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <span className="staff-dropzone__icon-wrap" aria-hidden>
+                    <Upload size={22} strokeWidth={2} />
+                  </span>
+                  <span className="staff-dropzone__lead">ลากและวางไฟล์ที่นี่</span>
+                  <span className="staff-dropzone__hint">
+                    หรือคลิกเพื่อเลือกไฟล์ (สูงสุด 1 ไฟล์, ไม่เกิน 5MB)
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="frow staff-sale-card__promo-row">
             <div className="fg">
               <label>โปรโมชั่น</label>
               <select value={form.promoId} onChange={(e) => setForm({ ...form, promoId: e.target.value })}>
@@ -1056,8 +1262,11 @@ export default function StaffPage() {
           )}
         </section>
 
-        <section className="staff-sale-form__section">
-          <div className="staff-sale-form__section-title">การจัดส่ง</div>
+        <section className="staff-sale-card staff-sale-card--delivery" aria-labelledby="staff-sale-card-del-title">
+          <header className="staff-sale-card__header staff-sale-card__header--tight-bottom">
+            <h3 id="staff-sale-card-del-title" className="staff-sale-card__title">การจัดส่ง</h3>
+            <p className="staff-sale-card__subtitle">เลือกวิธีรับสินค้าและกรอกข้อมูลจัดส่งเมื่อส่งถึงบ้าน</p>
+          </header>
           <div className="dtoggle">
             <label>วิธีรับสินค้า</label>
             <div className="dopts">
@@ -1138,15 +1347,22 @@ export default function StaffPage() {
           )}
         </section>
 
-        <div className="frow s1 staff-sale-form__note-row">
+        <section className="staff-sale-card staff-sale-card--note" aria-labelledby="staff-sale-card-note-title">
+          <header className="staff-sale-card__header staff-sale-card__header--tight-bottom">
+            <h3 id="staff-sale-card-note-title" className="staff-sale-card__title">หมายเหตุ</h3>
+            <p className="staff-sale-card__subtitle">บันทึกเพิ่มเติมเกี่ยวกับคำสั่งซื้อ (ไม่บังคับ)</p>
+          </header>
           <div className="fg">
-            <label>หมายเหตุเพิ่มเติม</label>
-            <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+            <label htmlFor="staff-sale-note-field" className="sr-only">
+              หมายเหตุเพิ่มเติม
+            </label>
+            <textarea id="staff-sale-note-field" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} rows={3} />
           </div>
-        </div>
+        </section>
+
 
         {/* spacer so content isn't hidden behind sticky bar */}
-        <div style={{ height: 72 }} aria-hidden />
+        <div className="staff-sale-form__sticky-spacer" aria-hidden />
 
         <div className="staff-form-sticky-bar">
           <div>
