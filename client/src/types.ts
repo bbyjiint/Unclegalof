@@ -3,7 +3,7 @@ export type PayStatus = "paid" | "pending" | "deposit";
 export type RepairStatus = "open" | "inprogress" | "done";
 export type RepairKind = "repair" | "claim";
 export type UserRole = "OWNER" | "SALES" | "REPAIRS";
-export type StoredFilePurpose = "PAYMENT_SLIP" | "REPAIR_IMAGE" | "SALE_IMAGE";
+export type StoredFilePurpose = "PAYMENT_SLIP" | "REPAIR_IMAGE" | "SALE_IMAGE" | "DELIVERY_PROOF";
 
 export interface AuthUser {
   id: string;
@@ -91,16 +91,39 @@ export interface Sale {
   cogsTotal?: number;
   /** OWNER-only: (รายได้สินค้า) - COGS */
   grossProfit?: number;
+  /** ค่าจัดส่ง (ลูกค้าจ่าย) — เท่ากับ workerDistanceFee เมื่อจัดส่ง / 0 เมื่อรับเอง */
+  deliveryFee?: number;
+  /** เมื่อมี includeCost — มีบรรทัดในออเดอร์ที่รอกรอก FIFO แล้ว */
+  costStatus?: "confirmed" | "pending_owner_review";
+  /** ค่ายก/แบกของพนักงานต่อออเดอร์ (รวมทุกบรรทัด) */
+  workerLiftFee?: number;
+  /** ค่าจัดส่งระยะทางที่จ่ายให้พนักงาน (เท่ากับค่าจัดส่งของลูกค้าเมื่อจัดส่ง) */
+  workerDistanceFee?: number;
+  /** ค่าตอบแทนพนักงานรวม = workerLiftFee + workerDistanceFee */
+  employeePayout?: number;
+  /** รายได้สุทธิเจ้าของกิจการ = grandTotal − employeePayout */
+  ownerNet?: number;
 }
 
-/** OWNER-only: คงคลัง + ต้นทุนเฉลี่ยจากค่าที่บันทึกตอนรับของ */
+/** One active inventory lot in FIFO order */
+export interface InventoryLotPosition {
+  id: string;
+  remainingQty: number;
+  costPerUnit: number;
+  /** remainingQty × costPerUnit; 0 when costPerUnit is 0 */
+  totalValue: number;
+  receivedAt: string;
+  note: string | null;
+}
+
+/** OWNER-only: per-product list of active lots in FIFO order (oldest = next to be consumed) */
 export interface CostPositionRow {
   deskItemId: string;
   name: string;
   onHandQty: number;
-  avgUnitCost: number | null;
-  /** จำนวนครั้งที่บันทึกต้นทุน (ใช้หาค่าเฉลี่ย) */
-  costSampleCount?: number;
+  /** Units in lots with costPerUnit = 0 — awaiting owner cost entry */
+  pendingQty: number;
+  lots: InventoryLotPosition[];
 }
 
 /** Delivery zone band + fee (from GET /catalog/delivery-fees). */
@@ -116,11 +139,14 @@ export interface DeliveryOrderRow {
   id: string;
   orderNumber: string;
   saleDate: string;
+  deliveryCompletedAt?: string | null;
   totalPrice: number;
   customerName: string | null;
   customerPhone: string | null;
   deliveryAddress: string | null;
   productName: string;
+  deliveryProofImage?: string | null;
+  deliveryAcknowledgedAt?: string | null;
   deskPhotos?: string[];
   items?: Array<{
     id: string;
@@ -176,20 +202,51 @@ export interface InventoryLotRow {
   qty: number;
   remainingQty: number;
   costPerUnit?: number;
+  /** Owner-only: number of consumed-lot records still carrying costPerUnitAtSale = 0 for this lot */
+  pendingOrderCount?: number;
   note?: string | null;
   createdAt: string;
 }
 
+/** One sale line awaiting owner cost entry */
+export interface PendingCostOrder {
+  id: string;
+  /** Base order number (e.g. SO-202601-0001), without line suffix */
+  orderNumber: string;
+  productName: string;
+  qty: number;
+  amount: number;
+  saleDate: string;
+  /** Each consumed lot that still has costPerUnitAtSale = 0; null receivedAt = unallocated stock */
+  pendingLots: Array<{ consumedQty: number; receivedAt: string | null }>;
+}
+
 export interface OwnerDashboard {
   summary: {
-    /** สะสมทั้งหมด — รายรับจากการขาย */
+    /** รายรับทั้งหมด — ทุก order รวม pending cost */
     income: number;
-    /** สะสมทั้งหมด — ต้นทุนสินค้า (COGS) */
+    /** COGS จาก confirmed-cost orders เท่านั้น */
     cost: number;
     cogsFromSales: number;
+    /** กำไร = confirmedIncome − COGS (ไม่รวม pending-cost orders) */
     profit: number;
     margin: number;
+    /** จำนวนบรรทัดที่รอเจ้าของกรอกต้นทุน */
+    pendingCostLineCount: number;
+    /** รายรับรวมของ pending-cost orders */
+    pendingCostRevenue: number;
+    /** ค่าใช้จ่ายจ่ายให้พนักงาน — เดือนที่เลือก (จากคอมมิชัน + ค่ายก + ค่าส่งให้พนักงาน) */
+    staffExpenses: {
+      salesCommission: number;
+      liftingFees: number;
+      deliveryWorkerFees: number;
+      total: number;
+    };
+    /** กำไรรวม (ยืนยันต้นทุนแล้ว) − ค่าใช้จ่ายพนักงานในเดือน */
+    ownerNetIncome: number;
   };
+  /** แต่ละบรรทัดขายที่ costStatus = pending_owner_review สำหรับเดือนที่เลือก */
+  pendingCostOrders: PendingCostOrder[];
   costPositions: CostPositionRow[];
   promotions: Promotion[];
   sales: Sale[];

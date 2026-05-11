@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
+  ArrowLeft,
+  ChevronDown,
   ClipboardList,
+  FileUp,
+  ImageOff,
   ImagePlus,
   MapPin,
+  Plus,
   Package,
   PlusCircle,
   Save,
   Truck,
+  Upload,
   Warehouse,
   Wallet,
   X
 } from "lucide-react";
 import { PaymentSlipLightbox } from "../components/PaymentSlipLightbox";
 import { useAuth } from "../components/AuthProvider";
-import { formatMoney, getZoneByKm } from "../data/constants";
+import { formatMoney, getZoneByKm, lineWorkerLiftFee } from "../data/constants";
 import { api } from "../lib/api";
 import { zoneForKm } from "../lib/deliveryZones";
 import { normalizeThaiMobile10Digits } from "../lib/thaiPhone";
@@ -76,7 +82,10 @@ type LightboxState = {
   index: number;
 };
 
+type StaffView = "home" | "newOrder" | "salesList";
+
 const MAX_SALE_PHOTOS = 4;
+const MAX_UPLOAD_FILE_BYTES = 5 * 1024 * 1024;
 const SALE_PHOTO_BLOCK_START = "[SALE_PHOTOS]";
 const SALE_PHOTO_BLOCK_END = "[/SALE_PHOTOS]";
 
@@ -97,6 +106,16 @@ function splitSaleNoteAndPhotos(rawNote?: string | null): { note: string; photos
     .filter(Boolean);
 
   return { note: visibleNote, photos: photoBlock };
+}
+
+/** Desk / note-embedded photos for an order — same aggregation as sale drawer thumbnails. */
+function collectSaleProductPhotoUrls(sale: Sale): string[] {
+  return Array.from(new Set([...(sale.deskPhotos || []), ...splitSaleNoteAndPhotos(sale.note).photos]));
+}
+
+function saleHasProductPhotos(sale: Sale): boolean {
+  if (sale.paymentBatchId || sale.paymentSlipImage) return true;
+  return collectSaleProductPhotoUrls(sale).length > 0;
 }
 
 function buildSaleNotePayload(note: string, photos: string[]): string {
@@ -146,6 +165,7 @@ export default function StaffPage() {
   const today = new Date().toISOString().slice(0, 10);
   const paymentSlipInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const salePhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const newOrderSlipInputRef = useRef<HTMLInputElement | null>(null);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -168,7 +188,13 @@ export default function StaffPage() {
   const [pickDeskItemId, setPickDeskItemId] = useState<string>("");
   const [pickQty, setPickQty] = useState<number>(1);
   const [pickPrice, setPickPrice] = useState<number | "">("");
-
+  const [view, setView] = useState<StaffView>("home");
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [pendingPaymentSlipFile, setPendingPaymentSlipFile] = useState<File | null>(null);
+  const [attachmentDragActive, setAttachmentDragActive] = useState(false);
+  const [paymentSlipDragActive, setPaymentSlipDragActive] = useState(false);
   async function loadPage(): Promise<void> {
     setLoading(true);
     try {
@@ -198,6 +224,12 @@ export default function StaffPage() {
   useEffect(() => {
     void loadPage();
   }, []);
+
+  useEffect(() => {
+    if (view !== "newOrder") {
+      setPendingPaymentSlipFile(null);
+    }
+  }, [view]);
 
   const pickProduct = useMemo(
     () => products.find((p) => p.id === pickDeskItemId) || null,
@@ -231,6 +263,13 @@ export default function StaffPage() {
       : null;
   const workerFee = form.delivery === "delivery" ? zone?.fee || 0 : 0;
   const grandTotal = Math.max(0, subtotal - Number(form.discount || 0) - Number(form.manualDisc || 0) + workerFee);
+  const workerLiftFeeTotal = lineItems.reduce(
+    (sum, line) => sum + lineWorkerLiftFee(line.product?.name, Number(line.qty || 0), form.delivery),
+    0
+  );
+  const workerDistanceFeeTotal = form.delivery === "delivery" ? workerFee : 0;
+  const employeePayoutTotal = workerLiftFeeTotal + workerDistanceFeeTotal;
+  const ownerNetTotal = Math.max(0, grandTotal - employeePayoutTotal);
 
   useEffect(() => {
     const promo = promotions.find((p) => String(p.id) === String(form.promoId));
@@ -279,7 +318,7 @@ export default function StaffPage() {
       return "มัดจำแล้ว";
     }
 
-    return "ค้างชำระ";
+    return "รอดำเนินการ";
   }
 
   function addPickerToOrder(): void {
@@ -358,9 +397,17 @@ export default function StaffPage() {
     salePhotoInputRef.current?.click();
   }
 
-  function handleSalePhotosSelected(event: ChangeEvent<HTMLInputElement>): void {
-    const picked = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/"));
-    event.target.value = "";
+  function openNewOrderSlipPicker(): void {
+    newOrderSlipInputRef.current?.click();
+  }
+
+  function appendNewSalePhotosFromFiles(files: File[]): void {
+    const picked = files.filter((file) => file.type.startsWith("image/"));
+    const oversize = picked.find((f) => f.size > MAX_UPLOAD_FILE_BYTES);
+    if (oversize) {
+      alert("แต่ละไฟล์ต้องไม่เกิน 5MB");
+      return;
+    }
     if (picked.length === 0) {
       return;
     }
@@ -377,6 +424,34 @@ export default function StaffPage() {
       }));
       return [...current, ...nextPhotos];
     });
+  }
+
+  function handleSalePhotosSelected(event: ChangeEvent<HTMLInputElement>): void {
+    const picked = Array.from(event.target.files || []);
+    event.target.value = "";
+    appendNewSalePhotosFromFiles(picked);
+  }
+
+  function assignPendingPaymentSlip(file: File | null): void {
+    if (!file) {
+      setPendingPaymentSlipFile(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      alert("กรุณาเลือกไฟล์รูปภาพสำหรับสลิป");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_FILE_BYTES) {
+      alert("ไฟล์สลิปต้องไม่เกิน 5MB");
+      return;
+    }
+    setPendingPaymentSlipFile(file);
+  }
+
+  function handleNewOrderSlipSelected(event: ChangeEvent<HTMLInputElement>): void {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    assignPendingPaymentSlip(file);
   }
 
   function removeSalePhoto(index: number): void {
@@ -443,6 +518,8 @@ export default function StaffPage() {
     }
 
     try {
+      const slipToUpload = pendingPaymentSlipFile;
+
       const linePhotoEntries = await Promise.all(
         lineItems.map(async (line) => ({
           rowId: line.rowId,
@@ -454,7 +531,7 @@ export default function StaffPage() {
       );
       const photoUrlsByRowId = new Map(linePhotoEntries.map((entry) => [entry.rowId, entry.urls]));
 
-      await api.createSale({
+      const created = (await api.createSale({
         date: form.date,
         items: lineItems.map((line) => ({
           deskItemId: line.deskItemId,
@@ -477,7 +554,22 @@ export default function StaffPage() {
         wFee: workerFee,
         wType: form.delivery === "delivery" ? "po" : "ice",
         promoId: form.promoId || null
-      });
+      })) as Sale;
+
+      if (slipToUpload) {
+        try {
+          const fileUrl = await uploadFileToR2(slipToUpload, "PAYMENT_SLIP");
+          await api.uploadSalePaymentSlip(created.id, { fileUrl });
+        } catch (slipErr) {
+          console.error("Payment slip upload after create failed:", slipErr);
+          alert(
+            "บันทึกการขายสำเร็จแล้ว แต่แนบสลิปไม่สำเร็จ — กรุณาเปิดรายการแล้วแนบสลิปจากเมนูรายละเอียด"
+          );
+        }
+      }
+
+      setPendingPaymentSlipFile(null);
+
       form.items.forEach((line) => line.photos.forEach((photo) => URL.revokeObjectURL(photo.url)));
       newSalePhotos.forEach((photo) => URL.revokeObjectURL(photo.url));
       setNewSalePhotos([]);
@@ -485,6 +577,7 @@ export default function StaffPage() {
       setPickDeskItemId(products[0]?.id ?? "");
       setPickQty(1);
       await loadPage();
+      setView("salesList");
     } catch (error) {
       console.error("Failed to create sale:", error);
       alert(error instanceof Error ? error.message : "Failed to create sale");
@@ -605,69 +698,191 @@ export default function StaffPage() {
   }
 
   return (
-    <main className="wrap staff-page">
-      {user?.role === "SALES" && commissionInsights ? (
-        <section
-          className="card"
-          style={{
-            marginBottom: 16,
-            borderLeft: "4px solid #c9a227",
-            background: "linear-gradient(180deg, #fffdf7 0%, #fff 100%)"
-          }}
-        >
-          <h3 className="h-with-icon" style={{ fontSize: 16, marginBottom: 8 }}>
-            <Wallet size={18} strokeWidth={2} aria-hidden />
-            คอมมิชชั่น & โบนัส
-          </h3>
-          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#555" }}>
-            โต๊ะเดือนนี้: <strong>{commissionInsights.monthlyUnitsSold ?? 0}</strong> ชุด · โต๊ะปีนี้:{" "}
-            <strong>{commissionInsights.yearlyUnitsSold ?? 0}</strong> ชุด
-            {commissionInsights.yearlyCurrentTier ? (
-              <>
-                {" "}
-                · โบนัสปีที่ถึงแล้ว:{" "}
-                <strong>{formatMoney(commissionInsights.yearlyCurrentTier.bonusBaht)}</strong>
-              </>
-            ) : null}
-          </p>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.55, color: "#1c1c1e" }}>
-            {(commissionInsights.encouragementLines ?? []).map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-        </section>
+    <main className={`wrap staff-page${view === "newOrder" ? " staff-page--new-order" : ""}`}>
+      {view !== "home" ? (
+        <button type="button" className="staff-page-back-btn" onClick={() => setView("home")} aria-label="กลับหน้าหลัก">
+          <ArrowLeft size={16} strokeWidth={2} aria-hidden />
+          กลับหน้าหลัก
+        </button>
       ) : null}
 
-      <section className="stats2">
-        <div className="stat">
-          <label>ยอดขายของคุณเดือนนี้</label>
-          <div className="val">{formatMoney(stats.total)}</div>
-        </div>
-        <div className="stat gold">
-          <label>จำนวนรายการของคุณ</label>
-          <div className="val">{stats.count}</div>
-        </div>
-      </section>
+      {view === "home" ? (
+        <>
+          {user?.role === "SALES" && commissionInsights ? (
+            <section
+              className="card"
+              style={{
+                marginBottom: 10,
+                borderLeft: "4px solid #c9a227",
+                background: "linear-gradient(180deg, #fffdf7 0%, #fff 100%)"
+              }}
+            >
+              <button
+                type="button"
+                className="staff-insights-toggle"
+                onClick={() => setInsightsOpen((v) => !v)}
+                aria-expanded={insightsOpen}
+              >
+                <span className="staff-insights-toggle__teaser">
+                  <Wallet size={14} strokeWidth={2} aria-hidden style={{ marginRight: 5, verticalAlign: "middle" }} />
+                  คอมมิชชั่น · เดือนนี้ {commissionInsights.monthlyUnitsSold ?? 0} ชุด
+                  {commissionInsights.yearlyCurrentTier
+                    ? ` · โบนัส ${formatMoney(commissionInsights.yearlyCurrentTier.bonusBaht)}`
+                    : ""}
+                </span>
+                <ChevronDown
+                  size={16}
+                  strokeWidth={2}
+                  aria-hidden
+                  className={`staff-insights-toggle__chevron${insightsOpen ? " staff-insights-toggle__chevron--open" : ""}`}
+                />
+              </button>
+              {insightsOpen ? (
+                <div className="staff-insights-body">
+                  <p style={{ margin: "0 0 8px", fontSize: 12, color: "#555" }}>
+                    โต๊ะปีนี้: <strong>{commissionInsights.yearlyUnitsSold ?? 0}</strong> ชุด
+                  </p>
+                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, lineHeight: 1.55, color: "#1c1c1e" }}>
+                    {(commissionInsights.encouragementLines ?? []).map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
-      <form className="card" onSubmit={handleSubmit}>
-        <h3 className="h-with-icon">
-          <PlusCircle size={20} strokeWidth={2} aria-hidden />
-          บันทึกการขาย
-        </h3>
-        <div className="frow">
-          <div className="fg">
-            <label>วันที่ขาย</label>
-            <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
-          </div>
-        </div>
+          <section className="stats2">
+            <div className="stat">
+              <label>ยอดขายของคุณเดือนนี้</label>
+              <div className="val">{formatMoney(stats.total)}</div>
+            </div>
+            <div className="stat gold">
+              <label>จำนวนรายการของคุณ</label>
+              <div className="val">{stats.count}</div>
+            </div>
+          </section>
 
-        <div className="staff-order-picker">
-          <h4 className="h-with-icon" style={{ fontSize: 15, marginBottom: 12 }}>
-            <Package size={18} strokeWidth={2} aria-hidden />
-            เลือกสินค้าแล้วกดเพิ่มลงออเดอร์
-          </h4>
+          <section className="staff-home-sales-link">
+            <h3>รายการขายเดือนนี้</h3>
+            <div className="staff-home-sales-link__actions">
+              <button
+                type="button"
+                className="staff-home-sales-link__create"
+                onClick={() => setView("newOrder")}
+                aria-label="สร้างออเดอร์ใหม่"
+              >
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                สร้างออเดอร์ใหม่
+              </button>
+              <button type="button" onClick={() => setView("salesList")} aria-label="ไปหน้ารายการขายทั้งหมด">
+                ทั้งหมด
+              </button>
+            </div>
+          </section>
+
+          {/* Preview table — latest 10 orders */}
+          {loading ? (
+            <div className="empty" style={{ padding: "20px 0" }}><p>กำลังโหลด...</p></div>
+          ) : sales.length === 0 ? (
+            <div className="empty" style={{ padding: "20px 0" }}>
+              <p>ยังไม่มีรายการขายในเดือนนี้</p>
+            </div>
+          ) : (
+            <div className="stbl-wrap">
+              <table className="stbl">
+                <thead>
+                  <tr>
+                    <th className="stbl-th">คำสั่งซื้อ</th>
+                    <th className="stbl-th">วันที่</th>
+                    <th className="stbl-th stbl-th--r">ยอดรวม</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sales.slice(0, 10).map((sale) => {
+                    const isDelivery = sale.delivery === "delivery";
+                    const isSelected = selectedSaleId === sale.id;
+                    return (
+                      <tr
+                        key={sale.id}
+                        className={`stbl-row ${isDelivery ? "stbl-row--del" : "stbl-row--pick"}${isSelected ? " stbl-row--active" : ""}`}
+                        onClick={() => setSelectedSaleId(isSelected ? null : sale.id)}
+                      >
+                        <td className="stbl-td">
+                          <div className="stbl-order-cell">
+                            <span className="stbl-order-num">{sale.orderNumber}</span>
+                            {!saleHasProductPhotos(sale) ? (
+                              <span className="stbl-photo-missing" role="status" title="ยังไม่มีรูปสินค้า / หน้างาน">
+                                <ImageOff size={11} strokeWidth={2.2} aria-hidden />
+                                ยังไม่แนบรูป
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="stbl-td stbl-td--date">
+                          {formatSaleDateThMedium(sale.date)}
+                        </td>
+                        <td className="stbl-td stbl-td--total">
+                          {formatMoney(sale.grandTotal)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {sales.length > 10 ? (
+                <button
+                  type="button"
+                  className="stbl-see-all-btn"
+                  onClick={() => setView("salesList")}
+                >
+                  ดูทั้งหมด {sales.length} รายการ →
+                </button>
+              ) : null}
+            </div>
+          )}
+        </>
+      ) : null}
+
+      {view === "newOrder" ? (
+      <form className="staff-sale-form" onSubmit={handleSubmit}>
+        <input
+          ref={salePhotoInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="sr-only"
+          tabIndex={-1}
+          onChange={handleSalePhotosSelected}
+        />
+        <input
+          ref={newOrderSlipInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          tabIndex={-1}
+          onChange={handleNewOrderSlipSelected}
+        />
+
+        <section className="staff-sale-card" aria-labelledby="staff-sale-card-order-title">
+          <header className="staff-sale-card__header">
+            <h3 id="staff-sale-card-order-title" className="staff-sale-card__title h-with-icon">
+              <PlusCircle size={20} strokeWidth={2} aria-hidden />
+              บันทึกการขาย
+            </h3>
+            <p className="staff-sale-card__subtitle">กรอกวันที่ เลือกสินค้า และตรวจรายการในออเดอร์ก่อนบันทึก</p>
+          </header>
+
           <div className="frow">
-            <div className="fg" style={{ flex: 2 }}>
+            <div className="fg">
+              <label>วันที่ขาย</label>
+              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
+            </div>
+          </div>
+
+          <div className="staff-order-picker">
+            <div className="staff-order-picker__title">เลือกสินค้า</div>
+            <div className="fg" style={{ marginBottom: 10 }}>
               <label>ประเภทโต๊ะ</label>
               <select
                 value={pickDeskItemId}
@@ -682,108 +897,40 @@ export default function StaffPage() {
                 ))}
               </select>
             </div>
-            <div className="fg">
-              <label>จำนวน (ชุด)</label>
-              <input
-                type="number"
-                min={1}
-                value={pickQty}
-                onChange={(e) => setPickQty(Number(e.target.value) || 1)}
-                disabled={products.length === 0}
-              />
+            <div className="frow frow--2col" style={{ marginBottom: 0 }}>
+              <div className="fg">
+                <label>จำนวน (ชุด)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={pickQty}
+                  onChange={(e) => setPickQty(Number(e.target.value) || 1)}
+                  disabled={products.length === 0}
+                />
+              </div>
+              <div className="fg">
+                <label>ราคาต่อชุด (บาท)</label>
+                <input
+                  type="number"
+                  value={pickPrice}
+                  readOnly
+                  tabIndex={-1}
+                  style={{ pointerEvents: "none", background: "#f8fafc", color: "#334155" }}
+                />
+              </div>
             </div>
-            <div className="fg">
-              <label>ราคาต่อชุด (บาท)</label>
-              <input
-                type="number"
-                min={0}
-                value={pickPrice}
-                onChange={(e) => setPickPrice(e.target.value === "" ? "" : Number(e.target.value))}
-                disabled={products.length === 0 || !pickProduct}
-              />
-            </div>
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <button
-              type="button"
-              className="sale-action-btn sale-action-btn--prominent"
-              disabled={!pickDeskItemId || !pickProduct || pickPrice === "" || products.length === 0}
-              onClick={addPickerToOrder}
-            >
-              <PlusCircle size={16} strokeWidth={2} aria-hidden />
-              เพิ่มลงในออเดอร์
-            </button>
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>Add photo</label>
-            <input
-              ref={salePhotoInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              style={{ display: "none" }}
-              onChange={handleSalePhotosSelected}
-            />
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            <div className="staff-order-picker__action">
               <button
                 type="button"
-                className="sale-action-btn"
-                onClick={openSalePhotoPicker}
-                disabled={newSalePhotos.length >= MAX_SALE_PHOTOS}
+                className="picker-add-btn"
+                disabled={!pickDeskItemId || !pickProduct || pickPrice === "" || products.length === 0}
+                onClick={addPickerToOrder}
               >
-                <ImagePlus size={16} strokeWidth={2} aria-hidden />
-                {newSalePhotos.length > 0 ? "เพิ่มรูป" : "เลือกรูป"}
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                เพิ่มลงในออเดอร์
               </button>
-              <span style={{ fontSize: 12, color: "#64748b" }}>
-                แนบได้สูงสุด {MAX_SALE_PHOTOS} รูป สำหรับรูปสินค้า/หน้างาน
-              </span>
             </div>
-            {newSalePhotos.length > 0 ? (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
-                {newSalePhotos.map((photo, index) => (
-                  <div
-                    key={`${photo.file.name}-${index}`}
-                    style={{
-                      width: 92,
-                      border: "1px solid #dbe2ea",
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      background: "#fff",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => openImageLightbox(newSalePhotos.map((item) => item.url), index)}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        padding: 0,
-                        border: 0,
-                        background: "transparent",
-                        cursor: "pointer",
-                      }}
-                      aria-label={`ดูรูปที่ ${index + 1}`}
-                    >
-                      <img
-                        src={photo.url}
-                        alt={`รูปออเดอร์ ${index + 1}`}
-                        style={{ width: "100%", height: 92, objectFit: "cover", display: "block" }}
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      className="sale-slip-link sale-slip-link--staff"
-                      style={{ width: "100%", borderRadius: 0, justifyContent: "center" }}
-                      onClick={() => removeSalePhoto(index)}
-                    >
-                      ลบรูป
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
           </div>
-        </div>
 
         <div className="staff-order-cart">
           <h4 className="h-with-icon" style={{ fontSize: 14, marginBottom: 10 }}>
@@ -871,234 +1018,410 @@ export default function StaffPage() {
             </div>
           )}
         </div>
+        </section>
 
-        <div className="frow">
-          <div className="fg">
-            <label>สถานะชำระเงิน</label>
-            <select value={form.pay} onChange={(e) => setForm({ ...form, pay: e.target.value as PayStatus })}>
+        <section className="staff-sale-card staff-sale-card--attachments" aria-labelledby="staff-sale-card-attach-title">
+          <header className="staff-sale-card__header">
+            <h3 id="staff-sale-card-attach-title" className="staff-sale-card__title">
+              แนบรูปสินค้า/หน้างาน
+            </h3>
+          </header>
+
+          <div className="fg staff-sale-card__field-gap staff-sale-card__field-gap--tight-top">
+            <label id="staff-attach-drop-label">รูปสินค้า / หน้างาน</label>
+            <div
+              className={`staff-dropzone staff-dropzone--compact${attachmentDragActive ? " staff-dropzone--active" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-labelledby="staff-attach-drop-label"
+              onClick={() => openSalePhotoPicker()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openSalePhotoPicker();
+                }
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setAttachmentDragActive(true);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setAttachmentDragActive(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setAttachmentDragActive(false);
+                appendNewSalePhotosFromFiles(Array.from(e.dataTransfer.files || []));
+              }}
+            >
+              <span className="staff-dropzone__icon-wrap" aria-hidden>
+                <Upload size={22} strokeWidth={2} />
+              </span>
+              <span className="staff-dropzone__lead">ลากและวางไฟล์ที่นี่</span>
+              <span className="staff-dropzone__hint">
+                หรือคลิกเพื่อเลือกไฟล์ (สูงสุด {MAX_SALE_PHOTOS} ไฟล์, ไม่เกิน 5MB ต่อไฟล์)
+              </span>
+            </div>
+          </div>
+          {newSalePhotos.length > 0 ? (
+            <div className="staff-attach-gallery">
+              <div className="staff-order-picker__photos-toolbar" style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="sale-action-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openSalePhotoPicker();
+                  }}
+                  disabled={newSalePhotos.length >= MAX_SALE_PHOTOS}
+                >
+                  <ImagePlus size={16} strokeWidth={2} aria-hidden />
+                  เพิ่มรูป ({newSalePhotos.length}/{MAX_SALE_PHOTOS})
+                </button>
+              </div>
+              <div className="staff-order-picker__photos-grid" style={{ marginTop: 8 }}>
+                {newSalePhotos.map((photo, index) => (
+                  <div key={`${photo.file.name}-${index}`} className="staff-order-picker__photo-card">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openImageLightbox(
+                          newSalePhotos.map((item) => item.url),
+                          index
+                        );
+                      }}
+                      className="staff-order-picker__photo-preview-btn"
+                      aria-label={`ดูรูปที่ ${index + 1}`}
+                    >
+                      <img
+                        src={photo.url}
+                        alt={`รูปออเดอร์ ${index + 1}`}
+                        className="staff-order-picker__photo-img"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      className="sale-slip-link sale-slip-link--staff staff-order-picker__photo-remove"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeSalePhoto(index);
+                      }}
+                    >
+                      ลบรูป
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="staff-sale-card staff-sale-card--payment" aria-labelledby="staff-sale-card-pay-title">
+          <header className="staff-sale-card__header">
+            <h3 id="staff-sale-card-pay-title" className="staff-sale-card__title">การชำระเงิน</h3>
+          </header>
+
+          <div className="fg staff-sale-card__field-gap">
+            <label htmlFor="staff-new-order-pay-status">สถานะการชำระเงิน</label>
+            <select
+              id="staff-new-order-pay-status"
+              value={form.pay}
+              onChange={(e) => setForm({ ...form, pay: e.target.value as PayStatus })}
+              className="staff-sale-card__select"
+            >
+              <option value="pending">รอดำเนินการ</option>
               <option value="paid">ชำระแล้ว</option>
-              <option value="pending">ค้างชำระ</option>
               <option value="deposit">มัดจำแล้ว</option>
             </select>
           </div>
-          <div className="fg">
-            <label>โปรโมชั่น</label>
-            <select value={form.promoId} onChange={(e) => setForm({ ...form, promoId: e.target.value })}>
-              <option value="">— ไม่มีส่วนลด —</option>
-              {promotions.filter((promo) => promo.active).map((promo) => (
-                <option key={promo.id} value={promo.id}>
-                  {promo.name} (ลด {formatPromoValueLabel(promo)})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
 
-        <div className="frow">
-          <div className="fg">
-            <label>ส่วนลดโปรโมชั่น</label>
-            <input type="number" value={form.discount} onChange={(e) => setForm({ ...form, discount: Number(e.target.value) || 0 })} />
-          </div>
-          <div className="fg">
-            <label>ลดเพิ่มโดยแอดมิน</label>
-            <input type="number" value={form.manualDisc} onChange={(e) => setForm({ ...form, manualDisc: Number(e.target.value) || 0 })} />
-          </div>
-        </div>
-
-        <div className="frow s1">
-          <div className="fg">
-            <label>เหตุผลลดเพิ่ม</label>
-            <input
-              type="text"
-              value={form.manualReason}
-              onChange={(e) => setForm({ ...form, manualReason: e.target.value })}
-              required={Number(form.manualDisc) > 0}
-            />
-          </div>
-        </div>
-
-        <div className="dtoggle">
-          <label>วิธีรับสินค้า</label>
-          <div className="dopts">
-            <button type="button" className={`dopt${form.delivery === "selfpickup" ? " sel" : ""}`} onClick={() => handleDeliveryChange("selfpickup")}>
-              <Warehouse size={16} strokeWidth={2} aria-hidden />
-              รับที่โกดัง
-            </button>
-            <button type="button" className={`dopt${form.delivery === "delivery" ? " sel" : ""}`} onClick={() => handleDeliveryChange("delivery")}>
-              <Truck size={16} strokeWidth={2} aria-hidden />
-              ส่งถึงบ้าน
-            </button>
-          </div>
-        </div>
-
-        {form.delivery === "delivery" && (
-          <div className="delbox show">
-            <div className="delbox-title">
-              <MapPin size={14} strokeWidth={2} aria-hidden />
-              ข้อมูลการจัดส่ง
-            </div>
-            <div className="frow">
-              <div className="fg">
-                <label>ระยะทาง (กม.)</label>
-                <input
-                  type="number"
-                  min="1"
-                  required={form.delivery === "delivery"}
-                  value={form.km}
-                  onChange={(e) => setForm({ ...form, km: e.target.value === "" ? "" : Number(e.target.value) })}
-                />
-              </div>
-              <div className="fg">
-                <label>ชื่อลูกค้า</label>
-                <input
-                  type="text"
-                  required={form.delivery === "delivery"}
-                  value={form.addr}
-                  onChange={(e) => setForm({ ...form, addr: e.target.value })}
-                  placeholder="ชื่อผู้รับ / ติดต่อ"
-                />
-              </div>
-            </div>
-            <div className="frow s1">
-              <div className="fg">
-                <label>เบอร์โทร</label>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="tel"
-                  required={form.delivery === "delivery"}
-                  title="ตัวเลข 10 หลัก ขึ้นต้นด้วย 0"
-                  maxLength={14}
-                  value={form.customerPhone}
-                  onChange={(e) => setForm({ ...form, customerPhone: e.target.value })}
-                  placeholder="0812345678"
-                />
-              </div>
-            </div>
-            <div className="frow s1">
-              <div className="fg">
-                <label>ลิงค์กูเกิ้ลแมพ</label>
-                <textarea
-                  required={form.delivery === "delivery"}
-                  value={form.deliveryAddress}
-                  onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
-                  placeholder="ลิงก์กูเกิ้ลแมพ — วางลิงก์จาก Google Maps"
-                  rows={3}
-                />
-              </div>
-            </div>
-            {zone && (
-              <div className={`zone-result show ${zone.fee === 0 ? "free" : "zone"}`}>
-                <span>{zone.label}</span>
-                <span>{formatMoney(zone.fee)}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="frow s1">
-          <div className="fg">
-            <label>หมายเหตุเพิ่มเติม</label>
-            <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-          </div>
-        </div>
-
-        <div className="card" style={{ background: "linear-gradient(135deg,var(--green),var(--green-light))", color: "white" }}>
-          <h3 className="h-with-icon" style={{ color: "white" }}>
-            <Wallet size={20} strokeWidth={2} aria-hidden />
-            ยอดรวม
-          </h3>
-          <div className="crow">
-            <div className="ctxt">ราคาสินค้ารวม</div>
-            <div className="crow-r">{formatMoney(subtotal)}</div>
-          </div>
-          {Number(form.discount || 0) > 0 ? (
-            <div className="crow">
-              <div className="ctxt">ส่วนลดโปรโมชั่น</div>
-              <div className="crow-r">- {formatMoney(Number(form.discount || 0))}</div>
-            </div>
-          ) : null}
-          {Number(form.manualDisc || 0) > 0 ? (
-            <div className="crow">
-              <div className="ctxt">ลดเพิ่มโดยแอดมิน</div>
-              <div className="crow-r">- {formatMoney(Number(form.manualDisc || 0))}</div>
-            </div>
-          ) : null}
-          {lineItems.length > 0 ? (
-            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
-              {lineItems.map((line) => (
-                <div key={line.rowId}>
-                  {line.product?.name || "—"} x {line.qty} = {formatMoney(line.lineBaseTotal)}
+          <div className="fg staff-sale-card__field-gap staff-sale-card__field-gap--tight-top">
+            <label id="staff-slip-drop-label">หลักฐานการชำระเงิน</label>
+            <div
+              className={`staff-dropzone staff-dropzone--compact${paymentSlipDragActive ? " staff-dropzone--active" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-labelledby="staff-slip-drop-label"
+              onClick={(e) => {
+                const t = e.target as HTMLElement | null;
+                if (t?.closest(".staff-slip-picked-bar__clear")) {
+                  return;
+                }
+                openNewOrderSlipPicker();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openNewOrderSlipPicker();
+                }
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPaymentSlipDragActive(true);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPaymentSlipDragActive(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPaymentSlipDragActive(false);
+                const file = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith("image/"))[0];
+                assignPendingPaymentSlip(file ?? null);
+              }}
+            >
+              {pendingPaymentSlipFile ? (
+                <div className="staff-slip-picked-bar">
+                  <span className="staff-slip-picked-bar__name" title={pendingPaymentSlipFile.name}>
+                    {pendingPaymentSlipFile.name}
+                  </span>
+                  <button
+                    type="button"
+                    className="staff-slip-picked-bar__clear"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      assignPendingPaymentSlip(null);
+                    }}
+                  >
+                    ลบ
+                  </button>
                 </div>
-              ))}
+              ) : (
+                <>
+                  <span className="staff-dropzone__icon-wrap" aria-hidden>
+                    <Upload size={22} strokeWidth={2} />
+                  </span>
+                  <span className="staff-dropzone__lead">ลากและวางไฟล์ที่นี่</span>
+                  <span className="staff-dropzone__hint">
+                    หรือคลิกเพื่อเลือกไฟล์ (สูงสุด 1 ไฟล์, ไม่เกิน 5MB)
+                  </span>
+                </>
+              )}
             </div>
-          ) : null}
+          </div>
+
+          <div className="frow staff-sale-card__promo-row">
+            <div className="fg">
+              <label>โปรโมชั่น</label>
+              <select value={form.promoId} onChange={(e) => setForm({ ...form, promoId: e.target.value })}>
+                <option value="">— ไม่มีส่วนลด —</option>
+                {promotions.filter((promo) => promo.active).map((promo) => (
+                  <option key={promo.id} value={promo.id}>
+                    {promo.name} (ลด {formatPromoValueLabel(promo)})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {discountOpen ? (
+            <>
+              <div className="frow">
+                <div className="fg">
+                  <label>ส่วนลดโปรโมชั่น</label>
+                  <input type="number" value={form.discount} onChange={(e) => setForm({ ...form, discount: Number(e.target.value) || 0 })} />
+                </div>
+                <div className="fg">
+                  <label>ลดเพิ่มโดยแอดมิน</label>
+                  <input type="number" value={form.manualDisc} onChange={(e) => setForm({ ...form, manualDisc: Number(e.target.value) || 0 })} />
+                </div>
+              </div>
+              <div className="frow s1">
+                <div className="fg">
+                  <label>เหตุผลลดเพิ่ม</label>
+                  <input
+                    type="text"
+                    value={form.manualReason}
+                    onChange={(e) => setForm({ ...form, manualReason: e.target.value })}
+                    required={Number(form.manualDisc) > 0}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <button type="button" className="staff-discount-toggle-link" onClick={() => setDiscountOpen(true)}>
+              <Plus size={12} strokeWidth={2.5} aria-hidden />
+              เพิ่มส่วนลดพิเศษ
+            </button>
+          )}
+        </section>
+
+        <section className="staff-sale-card staff-sale-card--delivery" aria-labelledby="staff-sale-card-del-title">
+          <header className="staff-sale-card__header staff-sale-card__header--tight-bottom">
+            <h3 id="staff-sale-card-del-title" className="staff-sale-card__title">การจัดส่ง</h3>
+            <p className="staff-sale-card__subtitle">เลือกวิธีรับสินค้าและกรอกข้อมูลจัดส่งเมื่อส่งถึงบ้าน</p>
+          </header>
+          <div className="dtoggle">
+            <label>วิธีรับสินค้า</label>
+            <div className="dopts">
+              <button type="button" className={`dopt${form.delivery === "selfpickup" ? " sel" : ""}`} onClick={() => handleDeliveryChange("selfpickup")}>
+                <Warehouse size={16} strokeWidth={2} aria-hidden />
+                รับที่โกดัง
+              </button>
+              <button type="button" className={`dopt${form.delivery === "delivery" ? " sel" : ""}`} onClick={() => handleDeliveryChange("delivery")}>
+                <Truck size={16} strokeWidth={2} aria-hidden />
+                ส่งถึงบ้าน
+              </button>
+            </div>
+          </div>
+
           {form.delivery === "delivery" && (
-            <div className="crow">
-              <div className="ctxt">ค่าจัดส่ง</div>
-              <div className="crow-r">{formatMoney(workerFee)}</div>
+            <div className="delbox show">
+              <div className="delbox-title">
+                <MapPin size={14} strokeWidth={2} aria-hidden />
+                ข้อมูลการจัดส่ง
+              </div>
+              <div className="frow">
+                <div className="fg">
+                  <label>ระยะทาง (กม.)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required={form.delivery === "delivery"}
+                    value={form.km}
+                    onChange={(e) => setForm({ ...form, km: e.target.value === "" ? "" : Number(e.target.value) })}
+                  />
+                </div>
+                <div className="fg">
+                  <label>ชื่อลูกค้า</label>
+                  <input
+                    type="text"
+                    required={form.delivery === "delivery"}
+                    value={form.addr}
+                    onChange={(e) => setForm({ ...form, addr: e.target.value })}
+                    placeholder="ชื่อผู้รับ / ติดต่อ"
+                  />
+                </div>
+              </div>
+              <div className="frow s1">
+                <div className="fg">
+                  <label>เบอร์โทร</label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    required={form.delivery === "delivery"}
+                    title="ตัวเลข 10 หลัก ขึ้นต้นด้วย 0"
+                    maxLength={14}
+                    value={form.customerPhone}
+                    onChange={(e) => setForm({ ...form, customerPhone: e.target.value })}
+                    placeholder="0812345678"
+                  />
+                </div>
+              </div>
+              <div className="frow s1">
+                <div className="fg">
+                  <label>ลิงค์กูเกิ้ลแมพ</label>
+                  <textarea
+                    required={form.delivery === "delivery"}
+                    value={form.deliveryAddress}
+                    onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
+                    placeholder="ลิงก์กูเกิ้ลแมพ — วางลิงก์จาก Google Maps"
+                    rows={3}
+                  />
+                </div>
+              </div>
+              {zone && (
+                <div className={`zone-result show ${zone.fee === 0 ? "free" : "zone"}`}>
+                  <span>{zone.label}</span>
+                  <span>{formatMoney(zone.fee)}</span>
+                </div>
+              )}
             </div>
           )}
-          <div className="crow">
-            <div className="ctxt">รวมทั้งหมด</div>
-            <div className="crow-r">{formatMoney(grandTotal)}</div>
-          </div>
-        </div>
+        </section>
 
-        <button
-          className="btnok"
-          type="submit"
-          disabled={
-            lineItems.length === 0 ||
-            lineItems.some((line) => !line.deskItemId || line.price === "" || Number(line.qty || 0) <= 0)
-          }
-        >
-          <Save size={18} strokeWidth={2} aria-hidden />
-          บันทึกออเดอร์
-        </button>
+        <section className="staff-sale-card staff-sale-card--note" aria-labelledby="staff-sale-card-note-title">
+          <header className="staff-sale-card__header staff-sale-card__header--tight-bottom">
+            <h3 id="staff-sale-card-note-title" className="staff-sale-card__title">หมายเหตุ</h3>
+            <p className="staff-sale-card__subtitle">บันทึกเพิ่มเติมเกี่ยวกับคำสั่งซื้อ (ไม่บังคับ)</p>
+          </header>
+          <div className="fg">
+            <label htmlFor="staff-sale-note-field" className="sr-only">
+              หมายเหตุเพิ่มเติม
+            </label>
+            <textarea id="staff-sale-note-field" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} rows={3} />
+          </div>
+        </section>
+
+
+        {/* spacer so content isn't hidden behind sticky bar */}
+        <div className="staff-sale-form__sticky-spacer" aria-hidden />
+
+        <div className="staff-form-sticky-bar">
+          <div>
+            <div className="staff-form-sticky-bar__label">ลูกค้าจ่าย</div>
+            <div className="staff-form-sticky-bar__total">{formatMoney(grandTotal)}</div>
+          </div>
+          <div className="staff-form-sticky-bar__payout">
+            พนง. {formatMoney(employeePayoutTotal)} · เจ้าของ {formatMoney(ownerNetTotal)}
+          </div>
+          <button
+            className="btnok"
+            type="submit"
+            disabled={
+              lineItems.length === 0 ||
+              lineItems.some((line) => !line.deskItemId || line.price === "" || Number(line.qty || 0) <= 0)
+            }
+          >
+            <Save size={16} strokeWidth={2} aria-hidden />
+            บันทึก
+          </button>
+        </div>
       </form>
+      ) : null}
 
+      {view === "salesList" ? (
       <section className="staff-sales-section">
-        <div
-          className="card staff-batch-card"
-          style={{
-            marginBottom: 12,
-            borderLeft: "4px solid #2563eb",
-            background: "linear-gradient(180deg, #eff6ff 0%, #fff 100%)",
-          }}
-        >
-          <h3 className="h-with-icon" style={{ fontSize: 15 }}>
-            <ImagePlus size={18} strokeWidth={2} aria-hidden />
-            แนบสลิปรวมหลายออเดอร์
-          </h3>
-          <p style={{ margin: "4px 0 10px", fontSize: 13, color: "#334155" }}>
-            เลือกออเดอร์ค้างชำระ/มัดจำ อย่างน้อย 2 รายการ แล้วแนบสลิปโอนครั้งเดียว
-          </p>
-          <div className="staff-batch-card__row">
-            <input
-              ref={batchSlipInputRef}
-              type="file"
-              accept="image/*"
-              style={{ display: "none" }}
-              onChange={(event) => {
-                void handleBatchSlipUpload(event);
-              }}
-            />
-            <button
-              type="button"
-              className="sale-action-btn sale-action-btn--prominent"
-              disabled={batchUploading || selectedBatchSaleIds.length < 2}
-              onClick={openBatchSlipPicker}
-            >
-              {batchUploading ? "กำลังอัปโหลดสลิปรวม..." : "แนบสลิปรวมให้รายการที่เลือก"}
-            </button>
-            <span style={{ fontSize: 12, color: "#475569" }}>
-              เลือกแล้ว {selectedBatchSaleIds.length} รายการ (พร้อมรวม {batchEligibleSales.length} รายการ)
-            </span>
+
+        {/* Batch slip card */}
+        <div className="batch-card">
+          <div className="batch-card__header">
+            <div className="batch-card__icon-wrap" aria-hidden>
+              <FileUp size={22} strokeWidth={2} />
+            </div>
+            <div className="batch-card__title">แนบสลิปรวมหลายออเดอร์</div>
+          </div>
+          <div className="batch-card__desc">
+            เลือกออเดอร์ค้างชำระ/มัดจำ อย่างน้อย 2 รายการ<br />แล้วแนบสลิปโอนครั้งเดียว
+          </div>
+          <input
+            ref={batchSlipInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(event) => { void handleBatchSlipUpload(event); }}
+          />
+          <button
+            type="button"
+            className="batch-card__btn"
+            disabled={batchUploading || selectedBatchSaleIds.length < 2}
+            onClick={openBatchSlipPicker}
+          >
+            {batchUploading ? "กำลังอัปโหลดสลิปรวม..." : "แนบสลิปรวมให้รายการที่เลือก"}
+          </button>
+          <div className="batch-card__count">
+            เลือกแล้ว {selectedBatchSaleIds.length} รายการ (พร้อมรวม {batchEligibleSales.length} รายการ)
           </div>
         </div>
 
-        <div className="slist-title with-icon">
+        <div className="slist-title with-icon" style={{ marginTop: 12 }}>
           <ClipboardList size={16} strokeWidth={2} aria-hidden />
           รายการขายเดือนนี้
         </div>
@@ -1112,227 +1435,171 @@ export default function StaffPage() {
             <p>ยังไม่มีรายการขายของคุณในเดือนนี้</p>
           </div>
         ) : (
-          sales.map((sale) => (
-            <div key={sale.id} className={`sitem ${sale.delivery}`}>
-              <div className="sitem-l">
-                {(() => {
-                  const salePhotos = Array.from(
-                    new Set([...(sale.deskPhotos || []), ...splitSaleNoteAndPhotos(sale.note).photos])
-                  );
-                  return (
-                    <>
-                <div className="soid">{sale.orderNumber}</div>
-                {sale.payStatus !== "paid" && !sale.paymentBatchId ? (
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginTop: 6,
-                      fontSize: 12,
-                      color: "#334155",
-                      cursor: "pointer",
-                      padding: "5px 10px",
-                      borderRadius: 9999,
-                      border: "1px solid #cbd5e1",
-                      background: selectedBatchSaleIds.includes(sale.id) ? "#eff6ff" : "#f8fafc",
-                      fontWeight: 600,
-                    }}
-                  >
+          <div className="stbl-wrap">
+            <table className="stbl">
+              <thead>
+                <tr>
+                  <th className="stbl-th stbl-th--chk">
                     <input
                       type="checkbox"
-                      style={{ width: 14, height: 14, accentColor: "#2563eb" }}
-                      checked={selectedBatchSaleIds.includes(sale.id)}
-                      onChange={(event) => toggleBatchSaleSelection(sale.id, event.target.checked)}
+                      className="stbl-chk"
+                      checked={batchEligibleSales.length > 0 && selectedBatchSaleIds.length === batchEligibleSales.length}
+                      ref={(el) => { if (el) el.indeterminate = selectedBatchSaleIds.length > 0 && selectedBatchSaleIds.length < batchEligibleSales.length; }}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedBatchSaleIds(batchEligibleSales.map((s) => s.id));
+                        } else {
+                          setSelectedBatchSaleIds([]);
+                        }
+                      }}
+                      aria-label="เลือกทั้งหมด"
+                      title="เลือก/ยกเลิกทั้งหมด"
                     />
-                    เลือกเข้ากลุ่มสลิปรวม
-                  </label>
-                ) : null}
-                <div className="staff-sale-meta">
-                  <div className="staff-sale-kv">
-                    <span className="staff-sale-kv-label">วันที่ขาย</span>
-                    <span className="staff-sale-kv-val">{formatSaleDateThMedium(sale.date)}</span>
-                  </div>
-                  <div className="staff-sale-kv">
-                    <span className="staff-sale-kv-label">ขนาด / รุ่น</span>
-                    <span className="staff-sale-kv-val">
-                      {sale.type} × {sale.qty} ชุด
-                    </span>
-                  </div>
-                  {sale.items && sale.items.length > 1 ? (
-                    <div style={{ fontSize: 12, color: "#475569" }}>
-                      {sale.items.map((item) => (
-                        <div key={item.id}>
-                          {item.type} x {item.qty} = {formatMoney(item.grandTotal)}
-                          {(item.deskPhotos?.length ?? 0) > 0 ? (
-                            <button
-                              type="button"
-                              className="sale-slip-link sale-slip-link--staff"
-                              style={{ marginLeft: 8 }}
-                              onClick={() => openImageLightbox(item.deskPhotos || [], 0)}
-                            >
-                              รูป {item.deskPhotos!.length}
-                            </button>
+                  </th>
+                  <th className="stbl-th">คำสั่งซื้อ</th>
+                  <th className="stbl-th">วันที่</th>
+                  <th className="stbl-th stbl-th--r">ยอดรวม</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sales.map((sale) => {
+                  const isDelivery = sale.delivery === "delivery";
+                  const isSelected = selectedSaleId === sale.id;
+                  return (
+                    <tr
+                      key={sale.id}
+                      className={`stbl-row ${isDelivery ? "stbl-row--del" : "stbl-row--pick"}${isSelected ? " stbl-row--active" : ""}`}
+                      onClick={() => setSelectedSaleId(isSelected ? null : sale.id)}
+                    >
+                      <td className="stbl-td stbl-td--chk" onClick={(e) => e.stopPropagation()}>
+                        {sale.payStatus !== "paid" && !sale.paymentBatchId ? (
+                          <input
+                            type="checkbox"
+                            className="stbl-chk"
+                            checked={selectedBatchSaleIds.includes(sale.id)}
+                            onChange={(event) => toggleBatchSaleSelection(sale.id, event.target.checked)}
+                            aria-label="เลือกเข้ากลุ่มสลิปรวม"
+                          />
+                        ) : null}
+                      </td>
+                      <td className="stbl-td">
+                        <div className="stbl-order-cell">
+                          <span className="stbl-order-num">{sale.orderNumber}</span>
+                          {!saleHasProductPhotos(sale) ? (
+                            <span className="stbl-photo-missing" role="status" title="ยังไม่มีรูปสินค้า / หน้างาน">
+                              <ImageOff size={11} strokeWidth={2.2} aria-hidden />
+                              ยังไม่แนบรูป
+                            </span>
                           ) : null}
                         </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="staff-sale-badges">
-                    <span className={`bdg with-icon-sm ${sale.delivery === "delivery" ? "del" : "pick"}`}>
-                      {sale.delivery === "delivery" ? (
-                        <>
-                          <Truck size={11} strokeWidth={2.5} aria-hidden />
-                          ส่งบ้าน
-                        </>
-                      ) : (
-                        <>
-                          <Warehouse size={11} strokeWidth={2.5} aria-hidden />
-                          รับเอง
-                        </>
-                      )}
-                    </span>
-                    <span className={`bdg ${sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "dep" : "pend"}`}>
-                      {getPayStatusLabel(sale.payStatus)}
-                    </span>
-                    {sale.delivery === "delivery" ? (
-                      sale.deliveryCompletedAt ? (
-                        <span className="bdg with-icon-sm ship-done">ส่งแล้ว</span>
-                      ) : (
-                        <span className="bdg with-icon-sm ship-wait">รอส่ง</span>
-                      )
-                    ) : null}
-                    {sale.paymentBatchNumber ? (
-                      <span
-                        className="bdg"
-                        style={{
-                          background: "#dbeafe",
-                          color: "#1d4ed8",
-                          border: "1px solid #bfdbfe",
-                        }}
-                      >
-                        สลิปรวม
-                      </span>
-                    ) : null}
-                  </div>
-                  {sale.delivery === "delivery" && sale.deliveryCompletedAt ? (
-                    <div className="staff-sale-ship-confirm">
-                      ยืนยันจัดส่ง{" "}
-                      {new Date(sale.deliveryCompletedAt).toLocaleString("th-TH", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
-                    </div>
-                  ) : null}
+                      </td>
+                      <td className="stbl-td stbl-td--date">
+                        {formatSaleDateThMedium(sale.date)}
+                      </td>
+                      <td className="stbl-td stbl-td--total">
+                        {formatMoney(sale.grandTotal)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+      </section>
+      ) : null}
+
+      {/* Detail drawer — shared across home + salesList views */}
+      {view !== "newOrder" && (() => {
+        const sale = sales.find((s) => s.id === selectedSaleId);
+        if (!sale) return null;
+        const salePhotos = collectSaleProductPhotoUrls(sale);
+        const productLine = sale.items && sale.items.length > 1
+          ? sale.items.map((item) => `${item.type} × ${item.qty} ชุด`).join(", ")
+          : `${sale.type} × ${sale.qty} ชุด`;
+        const isDelivery = sale.delivery === "delivery";
+        return (
+          <>
+            <div className="sale-drawer-backdrop" onClick={() => setSelectedSaleId(null)} aria-hidden />
+            <aside className="sale-drawer" aria-label="รายละเอียดคำสั่งซื้อ">
+              <div className="sale-drawer__header">
+                <div>
+                  <div className="sale-drawer__header-label">รายละเอียดคำสั่งซื้อ:</div>
+                  <div className="sale-drawer__header-num">{sale.orderNumber}</div>
                 </div>
-                <div className="smeta" style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
-                  บันทึกโดย {sale.createdByName || sale.createdByUsername || "—"}
-                  {sale.recordedAt
-                    ? ` · ${new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
-                    : null}
+                <button type="button" className="sale-drawer__close" onClick={() => setSelectedSaleId(null)} aria-label="ปิด">
+                  <X size={18} strokeWidth={2.5} aria-hidden />
+                </button>
+              </div>
+              <div className="sale-drawer__body">
+                <div className="sale-drawer__section">
+                  <div className="sale-drawer__section-title">ข้อมูลคำสั่งซื้อ</div>
+                  <div className="sale-drawer__kv"><span className="sale-drawer__kv-label">วันที่ขาย</span><span className="sale-drawer__kv-val">{formatSaleDateThMedium(sale.date)}</span></div>
+                  <div className="sale-drawer__kv"><span className="sale-drawer__kv-label">ขนาด / รุ่น</span><span className="sale-drawer__kv-val">{productLine}</span></div>
+                  {sale.customerName ? <div className="sale-drawer__kv"><span className="sale-drawer__kv-label">ลูกค้า</span><span className="sale-drawer__kv-val">{sale.customerName}</span></div> : null}
+                  {sale.customerPhone ? <div className="sale-drawer__kv"><span className="sale-drawer__kv-label">เบอร์โทร</span><span className="sale-drawer__kv-val">{sale.customerPhone}</span></div> : null}
+                </div>
+                <div className="sale-drawer__section">
+                  <div className="sale-drawer__section-title">สถานะ</div>
+                  <div className="sale-drawer__badges">
+                    <span className={`bdg with-icon-sm ${isDelivery ? "del" : "pick"}`}>
+                      {isDelivery ? <><Truck size={11} strokeWidth={2.5} aria-hidden />ส่งบ้าน</> : <><Warehouse size={11} strokeWidth={2.5} aria-hidden />รับเอง</>}
+                    </span>
+                    <span className={`bdg ${sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "dep" : "pend"}`}>{getPayStatusLabel(sale.payStatus)}</span>
+                    {isDelivery ? (sale.deliveryCompletedAt ? <span className="bdg with-icon-sm ship-done">ส่งแล้ว</span> : <span className="bdg with-icon-sm ship-wait">รอส่ง</span>) : null}
+                    {sale.paymentBatchNumber ? <span className="bdg" style={{ background: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>{sale.paymentBatchNumber}</span> : null}
+                  </div>
+                  <div className="sale-drawer__meta">
+                    บันทึกโดย {sale.createdByName || sale.createdByUsername || "—"}
+                    {sale.recordedAt ? ` · ${new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}` : null}
+                  </div>
+                </div>
+                <div className="sale-drawer__section">
+                  <div className="sale-drawer__section-title">สรุปทางการเงิน</div>
+                  <div className="sale-drawer__grand-total">{formatMoney(sale.grandTotal)}</div>
+                  {sale.workerLiftFee != null && sale.workerLiftFee > 0 ? <div className="sale-drawer__fin-row"><span>ค่ายก/แบก</span><span>{formatMoney(sale.workerLiftFee)}</span></div> : null}
+                  {isDelivery && sale.workerDistanceFee != null && sale.workerDistanceFee > 0 ? <div className="sale-drawer__fin-row"><span>ค่าจัดส่ง</span><span>{formatMoney(sale.workerDistanceFee)}</span></div> : null}
+                  {sale.employeePayout != null ? <div className="sale-drawer__fin-row"><span>พนักงานรับ</span><span>{formatMoney(sale.employeePayout)}</span></div> : null}
+                  {sale.ownerNet != null ? <div className="sale-drawer__fin-row sale-drawer__fin-row--net"><span>เจ้าของได้</span><span>{formatMoney(sale.ownerNet)}</span></div> : null}
                 </div>
                 {salePhotos.length > 0 ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                    {salePhotos.map((photoUrl, index) => (
-                      <button
-                        key={`${sale.id}-photo-${index}`}
-                        type="button"
-                        className="sale-slip-link sale-slip-link--staff"
-                        onClick={() => openImageLightbox(salePhotos, index)}
-                      >
-                        ดูรูป {index + 1}
-                      </button>
-                    ))}
+                  <div className="sale-drawer__section">
+                    <div className="sale-drawer__section-title">รูปภาพ</div>
+                    <div className="sale-drawer__photos">
+                      {salePhotos.map((url, i) => (
+                        <button key={i} type="button" className="sale-drawer__photo-btn" onClick={() => openImageLightbox(salePhotos, i)}>
+                          <img src={url} alt={`รูป ${i + 1}`} className="sale-drawer__photo-img" />
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
-                {sale.paymentBatchNumber ? (
-                  <div style={{ marginTop: 6 }}>
-                    <span
-                      style={{
-                        display: "inline-block",
-                        padding: "3px 9px",
-                        borderRadius: 9999,
-                        background: "#dbeafe",
-                        color: "#1d4ed8",
-                        fontSize: 12,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {sale.paymentBatchNumber}
-                      {sale.paymentBatchTotalAmount != null
-                        ? ` · รวมบิล ${formatMoney(sale.paymentBatchTotalAmount)}`
-                        : ""}
-                    </span>
-                  </div>
-                ) : null}
-                    </>
-                  );
-                })()}
-              </div>
-              <div className="sitem-right">
-                <div className="sprice">{formatMoney(sale.grandTotal)}</div>
-                <div className="sale-actions sale-actions--staff-row">
-                  <input
-                    ref={(node) => {
-                      paymentSlipInputRefs.current[sale.id] = node;
-                    }}
-                    type="file"
-                    accept="image/*"
-                    style={{ display: "none" }}
-                    onChange={(event) => {
-                      void handlePaymentSlipUpload(sale.id, event);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="sale-action-btn sale-action-btn--prominent"
-                    onClick={() => openPaymentSlipPicker(sale.id)}
-                    disabled={uploadingSaleId === sale.id}
-                  >
-                    {uploadingSaleId === sale.id ? (
-                      "กำลังอัปโหลด..."
-                    ) : sale.paymentSlipImage ? (
-                      <>
-                        <ImagePlus size={16} strokeWidth={2} aria-hidden />
-                        อัปเดตสลิป
-                      </>
-                    ) : (
-                      <>
-                        <ImagePlus size={16} strokeWidth={2} aria-hidden />
-                        แนบสลิปโอนเงิน
-                      </>
-                    )}
+                <div className="sale-drawer__section">
+                  <button type="button" className="sale-drawer__delete-btn" onClick={() => { void handleDeleteSale(sale.id); setSelectedSaleId(null); }}>
+                    <X size={14} strokeWidth={2.5} aria-hidden />ลบรายการนี้
                   </button>
-                  {sale.paymentSlipImage && (
-                    <>
-                      <button
-                        type="button"
-                        className="sale-slip-link sale-slip-link--staff"
-                        onClick={() => openImageLightbox([sale.paymentSlipImage!], 0)}
-                      >
-                        ดูสลิป
-                      </button>
-                      <button
-                        type="button"
-                        className="sale-slip-link sale-slip-link--staff"
-                        onClick={() => {
-                          void handleRemovePaymentSlip(sale.id);
-                        }}
-                        disabled={uploadingSaleId === sale.id}
-                      >
-                        ลบสลิป
-                      </button>
-                    </>
-                  )}
                 </div>
               </div>
-              <button className="bdel" type="button" aria-label="ลบรายการ" onClick={() => handleDeleteSale(sale.id)}>
-                <X size={16} strokeWidth={2.5} aria-hidden />
-              </button>
-            </div>
-          ))
-        )}
-      </section>
+              <div className="sale-drawer__footer">
+                <input ref={(node) => { paymentSlipInputRefs.current[sale.id] = node; }} type="file" accept="image/*" style={{ display: "none" }} onChange={(event) => { void handlePaymentSlipUpload(sale.id, event); }} />
+                <button type="button" className="btnok" onClick={() => openPaymentSlipPicker(sale.id)} disabled={uploadingSaleId === sale.id}>
+                  {uploadingSaleId === sale.id ? "กำลังอัปโหลด..." : <><ImagePlus size={16} strokeWidth={2} aria-hidden />{sale.paymentSlipImage ? "อัปเดตสลิปโอนเงิน" : "แนบสลิปโอนเงิน"}</>}
+                </button>
+                {sale.paymentSlipImage ? (
+                  <button type="button" className="sale-slip-link sale-slip-link--staff" style={{ textAlign: "center" }} onClick={() => openImageLightbox([sale.paymentSlipImage!], 0)}>ดูสลิปที่แนบ</button>
+                ) : null}
+              </div>
+            </aside>
+          </>
+        );
+      })()}
+
+      {view === "home" ? (
+        <button type="button" className="mobile-fab" onClick={() => setView("newOrder")} aria-label="สร้างออเดอร์ใหม่">
+          <Plus size={24} strokeWidth={2.5} aria-hidden />
+        </button>
+      ) : null}
 
       <PaymentSlipLightbox
         imageSources={lightboxState?.images}

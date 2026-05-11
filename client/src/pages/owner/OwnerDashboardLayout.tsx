@@ -5,9 +5,11 @@ import {
   ClipboardList,
   LayoutDashboard,
   MapPin,
+  Menu,
   Package,
   Tag,
-  Users
+  Users,
+  X
 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { PaymentSlipLightbox } from "../../components/PaymentSlipLightbox";
@@ -28,26 +30,35 @@ import {
 } from "./ownerDashboardContext";
 import "./owner-dashboard.css";
 
+type OwnerNavSection = "sales" | "overview" | "stock" | "management";
+
 const NAV_ITEMS = [
-  { to: "/owner", end: true as const, label: "ภาพรวม", Icon: LayoutDashboard },
-  { to: "/owner/employees", end: false as const, label: "พนักงาน", Icon: Users },
-  { to: "/owner/promotions", end: false as const, label: "โปรโมชั่น", Icon: Tag },
-  { to: "/owner/purchasing", end: false as const, label: "รับของ / สต็อก", Icon: Package },
-  { to: "/owner/delivery", end: false as const, label: "ค่าจัดส่ง", Icon: MapPin },
-  { to: "/owner/reports", end: false as const, label: "รายงาน", Icon: ClipboardList }
+  { to: "/owner/reports", end: false as const, label: "รายการขาย", Icon: ClipboardList, section: "sales" as const },
+  { to: "/owner/overview", end: true as const, label: "ภาพรวม", Icon: LayoutDashboard, section: "overview" as const },
+  { to: "/owner/employees", end: false as const, label: "พนักงาน", Icon: Users, section: "management" as const },
+  { to: "/owner/promotions", end: false as const, label: "โปรโมชั่น", Icon: Tag, section: "sales" as const },
+  { to: "/owner/purchasing", end: false as const, label: "รับของ / สต็อก", Icon: Package, section: "stock" as const },
+  { to: "/owner/delivery", end: false as const, label: "จัดส่ง", Icon: MapPin, section: "management" as const }
+];
+
+const NAV_SECTIONS: Array<{ id: OwnerNavSection; label: string }> = [
+  { id: "overview", label: "ภาพรวม" },
+  { id: "sales", label: "การขาย" },
+  { id: "stock", label: "สินค้า & สต็อก" },
+  { id: "management", label: "จัดการ" }
 ];
 
 function pageTitleFromPath(pathname: string): string {
   const p = pathname.replace(/\/+$/, "") || "/";
-  if (p === "/owner") {
+  if (p === "/owner/overview") {
     return "ภาพรวม";
   }
   const routes: Array<{ prefix: string; title: string }> = [
     { prefix: "/owner/employees", title: "พนักงาน" },
     { prefix: "/owner/promotions", title: "โปรโมชั่น" },
     { prefix: "/owner/purchasing", title: "รับของ & สต็อก" },
-    { prefix: "/owner/delivery", title: "ค่าจัดส่ง" },
-    { prefix: "/owner/reports", title: "รายงาน" }
+    { prefix: "/owner/delivery", title: "จัดส่ง" },
+    { prefix: "/owner/reports", title: "รายการขาย" }
   ];
   for (const { prefix, title } of routes) {
     if (p === prefix || p.startsWith(`${prefix}/`)) {
@@ -61,11 +72,11 @@ export default function OwnerDashboardLayout() {
   const now = new Date();
   const location = useLocation();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [dashboard, setDashboard] = useState<OwnerDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
   const [year, setYear] = useState<number>(now.getFullYear());
-  const [weekFilter, setWeekFilter] = useState<"all" | "1" | "2" | "3" | "4" | "5">("all");
   const [payStatusFilter, setPayStatusFilter] = useState<"all" | "paid" | "pending" | "deposit">("all");
   const [sortBy, setSortBy] = useState<"time" | "total">("time");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
@@ -305,23 +316,11 @@ export default function OwnerDashboardLayout() {
 
   const sales = dashboard?.sales || [];
   const filteredAndSortedSales = useMemo(() => {
-    const inFilteredWeek = (dateValue?: string | null) => {
-      if (weekFilter === "all") {
-        return true;
-      }
-      if (!dateValue) {
-        return false;
-      }
-      const dayOfMonth = new Date(dateValue).getDate();
-      const weekOfMonth = Math.min(5, Math.floor((dayOfMonth - 1) / 7) + 1);
-      return String(weekOfMonth) === weekFilter;
-    };
-
     const statusFiltered = sales.filter((sale) => {
       if (payStatusFilter !== "all" && sale.payStatus !== payStatusFilter) {
         return false;
       }
-      return inFilteredWeek(sale.date);
+      return true;
     });
 
     return [...statusFiltered].sort((a, b) => {
@@ -335,7 +334,7 @@ export default function OwnerDashboardLayout() {
       }
       return sortDir === "asc" ? diff : -diff;
     });
-  }, [sales, payStatusFilter, weekFilter, sortBy, sortDir]);
+  }, [sales, payStatusFilter, sortBy, sortDir]);
 
   const statusCount = useMemo(
     () => ({
@@ -363,8 +362,6 @@ export default function OwnerDashboardLayout() {
     year,
     setMonth,
     setYear,
-    weekFilter,
-    setWeekFilter,
     payStatusFilter,
     setPayStatusFilter,
     sortBy,
@@ -407,7 +404,7 @@ export default function OwnerDashboardLayout() {
 
   if (!dashboard) {
     return (
-      <main className="owrap owner-dash">
+      <main className="owner-dash">
         <div className="owner-dash__loading">{error || "กำลังโหลด..."}</div>
       </main>
     );
@@ -415,13 +412,43 @@ export default function OwnerDashboardLayout() {
 
   return (
     <OwnerDashboardContext.Provider value={contextValue}>
-      <main className={`owrap owner-dash${sidebarCollapsed ? " owner-dash--sidebar-collapsed" : ""}`}>
+      <main className={`owner-dash${sidebarCollapsed ? " owner-dash--sidebar-collapsed" : ""}${mobileSidebarOpen ? " owner-dash--mobile-sidebar-open" : ""}`}>
+
+        {/* Mobile topbar */}
         <header className="owner-dash__topbar">
+          <button
+            type="button"
+            className="owner-dash__hamburger"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="เปิดเมนู"
+            aria-expanded={mobileSidebarOpen}
+          >
+            <Menu size={22} strokeWidth={2} aria-hidden />
+          </button>
           <h1 className="owner-dash__topbar-title">{pageTitle}</h1>
         </header>
 
+        {/* Mobile backdrop */}
+        {mobileSidebarOpen ? (
+          <div
+            className="owner-dash__mobile-backdrop"
+            onClick={() => setMobileSidebarOpen(false)}
+            aria-hidden
+          />
+        ) : null}
+
         <aside className="owner-dash__sidebar" aria-label="เมนูแดชบอร์ดเจ้าของ">
           <div className="owner-dash__sidebar-head">
+            {/* Mobile close button */}
+            <button
+              type="button"
+              className="owner-dash__sidebar-close"
+              onClick={() => setMobileSidebarOpen(false)}
+              aria-label="ปิดเมนู"
+            >
+              <X size={18} strokeWidth={2} aria-hidden />
+            </button>
+            {/* Desktop collapse button */}
             <button
               type="button"
               className="owner-dash__sidebar-collapse"
@@ -437,19 +464,32 @@ export default function OwnerDashboardLayout() {
             </button>
           </div>
           <nav className="owner-dash__nav-desktop">
-            {NAV_ITEMS.map(({ to, end, label, Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) =>
-                  `owner-dash__nav-link${isActive ? " owner-dash__nav-link--active" : ""}`
-                }
-              >
-                <Icon size={22} strokeWidth={2} aria-hidden />
-                <span className="owner-dash__nav-label">{label}</span>
-              </NavLink>
-            ))}
+            {NAV_SECTIONS.map((section) => {
+              const sectionItems = NAV_ITEMS.filter((item) => item.section === section.id);
+              if (sectionItems.length === 0) return null;
+
+              return (
+                <div className="owner-dash__nav-section" key={section.id}>
+                  <span className="owner-dash__nav-section-label">{section.label}</span>
+                  {sectionItems.map(({ to, end, label, Icon }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      end={end}
+                      onClick={() => setMobileSidebarOpen(false)}
+                      className={({ isActive }) =>
+                        `owner-dash__nav-link${isActive ? " owner-dash__nav-link--active" : ""}`
+                      }
+                    >
+                      <span className="owner-dash__nav-icon">
+                        <Icon size={18} strokeWidth={2.35} aria-hidden />
+                      </span>
+                      <span className="owner-dash__nav-label">{label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              );
+            })}
           </nav>
         </aside>
 

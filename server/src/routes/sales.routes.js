@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { UserRole } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
@@ -8,7 +8,6 @@ import { requireOwner, requireSales } from "../middleware/authorize.middleware.j
 import { writeRateLimiter } from "../middleware/rateLimit.middleware.js";
 import { normalizeCustomerPhoneThai10 } from "../lib/adapters.js";
 import { getCanonicalCompanyOwnerId } from "../lib/company.js";
-import { getAverageRecordedCost } from "../lib/inventoryCost.js";
 import {
   commissionBahtForLine,
   MONTHLY_COMMISSION_FREE_UNITS,
@@ -23,6 +22,7 @@ import {
   saleRecordFrontendInclude,
   saleRecordsToFrontendSales,
 } from "../lib/salesOrders.js";
+import { computeEmployeePayout, computeLineWorkerLiftFee } from "../lib/workerPayouts.js";
 
 const router = Router();
 
@@ -304,43 +304,39 @@ function buildLineOrderNumber(orderNumber, lineNumber) {
   return `${orderNumber}-L${String(lineNumber).padStart(2, "0")}`;
 }
 
-function isOrderNumberUniqueConstraint(error) {
-  return (
-    error?.code === "P2002" &&
-    Array.isArray(error?.meta?.target) &&
-    error.meta.target.includes("orderNumber")
-  );
-}
-
-function sequenceFromOrderNumber(orderNumber, prefix) {
-  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = String(orderNumber || "").match(new RegExp(`^${escapedPrefix}(\\d{4})(?:-L\\d{2})?$`));
-  return match ? Number(match[1]) : 0;
-}
-
-async function getNextLogicalOrderNumber(tx, prefix) {
-  const [legacyRows, salesOrderRows] = await Promise.all([
-    tx.saleRecord.findMany({
-      where: {
-        salesOrderId: null,
-        orderNumber: { startsWith: prefix },
-      },
+async function getNextLogicalOrderSequence(tx, monthStart, monthEnd) {
+  // Use MAX(suffix) + 1 instead of COUNT(*) + 1 so deletions don't shift the
+  // computed next number onto an orderNumber that already exists in the DB
+  // (which would cause P2002 on every create until a new month rolls over).
+  const [latestSalesOrder, latestLegacy] = await Promise.all([
+    tx.salesOrder.findFirst({
+      where: { saleDate: { gte: monthStart, lt: monthEnd } },
+      orderBy: { orderNumber: "desc" },
       select: { orderNumber: true },
     }),
-    tx.salesOrder.findMany({
+    tx.saleRecord.findFirst({
       where: {
-        orderNumber: { startsWith: prefix },
+        saleDate: { gte: monthStart, lt: monthEnd },
+        salesOrderId: null,
       },
+      orderBy: { orderNumber: "desc" },
       select: { orderNumber: true },
     }),
   ]);
 
-  const maxSequence = [...legacyRows, ...salesOrderRows].reduce(
-    (max, row) => Math.max(max, sequenceFromOrderNumber(row.orderNumber, prefix)),
-    0
-  );
+  const suffixOf = (orderNumber) => {
+    if (!orderNumber) return 0;
+    // SalesOrder uses SO-YYYYMM-NNNN; legacy SaleRecord (no parent) may use
+    // an SO-YYYYMM-NNNN-LXX form — strip the line suffix before parsing.
+    const trunk = orderNumber.replace(/-L\d+$/, "");
+    const tail = trunk.split("-").pop();
+    const parsed = parseInt(tail, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
 
-  return `${prefix}${String(maxSequence + 1).padStart(4, "0")}`;
+  const maxSuffix = Math.max(suffixOf(latestSalesOrder?.orderNumber), suffixOf(latestLegacy?.orderNumber));
+
+  return maxSuffix + 1;
 }
 
 async function loadLogicalSaleGroup(tx, id) {
@@ -524,9 +520,27 @@ router.post(
       const month = saleDate.getUTCMonth() + 1;
       const monthStart = new Date(Date.UTC(year, month - 1, 1));
       const monthEnd = new Date(Date.UTC(year, month, 1));
+      // Batch desk item lookups — 2 parallel queries instead of L sequential ones
+      const byIdLines = linesInput.filter((l) => l.deskItemId);
+      const byNameLines = linesInput.filter((l) => !l.deskItemId && String(l.type ?? "").trim());
+
+      const [itemsById, itemsByName] = await Promise.all([
+        byIdLines.length > 0
+          ? prisma.deskItem.findMany({ where: { id: { in: byIdLines.map((l) => l.deskItemId) } } })
+          : Promise.resolve([]),
+        byNameLines.length > 0
+          ? prisma.deskItem.findMany({ where: { name: { in: byNameLines.map((l) => l.type) } } })
+          : Promise.resolve([]),
+      ]);
+
+      const deskItemMapById = new Map(itemsById.map((d) => [d.id, d]));
+      const deskItemMapByName = new Map(itemsByName.map((d) => [d.name, d]));
+
       const resolvedLines = [];
       for (const line of linesInput) {
-        const deskItem = await resolveDeskItemForLine(prisma, line);
+        const deskItem = line.deskItemId
+          ? deskItemMapById.get(line.deskItemId)
+          : deskItemMapByName.get(String(line.type ?? "").trim());
         if (!deskItem) {
           const productLabel = line.type || line.deskItemId || "unknown";
           const error = new Error(`Desk item "${productLabel}" not found. Please create it first in catalog.`);
@@ -547,51 +561,64 @@ router.post(
       const manualShares = allocateIntegerTotal(payload.manualDisc || 0, resolvedLines.map((line) => line.baseAmount));
       const feeShares = allocateIntegerTotal(payload.wFee || 0, resolvedLines.map((line) => line.baseAmount));
 
-      let priorUnits = 0;
-      if (req.role === UserRole.SALES) {
-        const priorAgg = await prisma.saleRecord.aggregate({
-          where: {
-            createdByUserId: req.user.id,
-            saleDate: { gte: monthStart, lt: monthEnd },
-          },
-          _sum: { quantity: true },
-        });
-        priorUnits = priorAgg._sum.quantity ?? 0;
-      }
-
-      const orderNumberPrefix = `SO-${year}${String(month).padStart(2, "0")}-`;
-
-      const avgCostByDeskItemId = new Map();
-      const uniqueDeskItemIds = [...new Set(resolvedLines.map((line) => line.deskItem.id))];
-      for (const deskItemId of uniqueDeskItemIds) {
-        const avgRec = await getAverageRecordedCost(prisma, deskItemId);
-        avgCostByDeskItemId.set(deskItemId, avgRec?.avgUnitCost ?? 0);
-      }
-
-      const sourceLots = await prisma.inventoryLot.findMany({
-        where: {
-          deskItemId: { in: uniqueDeskItemIds },
-          remainingQty: { gt: 0 },
-        },
-        orderBy: [{ deskItemId: "asc" }, { createdAt: "asc" }],
+      const customerDeliveryFee = Number(payload.wFee || 0);
+      const customerTotal = Math.max(
+        0,
+        subtotal - Number(payload.discount || 0) - Number(payload.manualDisc || 0) + customerDeliveryFee
+      );
+      const lineLiftFees = resolvedLines.map((line) =>
+        computeLineWorkerLiftFee({
+          name: line.deskItem.name,
+          qty: line.qty,
+          deliveryMode: payload.delivery,
+        })
+      );
+      const payoutSummary = computeEmployeePayout({
+        lines: resolvedLines.map((line) => ({ name: line.deskItem.name, qty: line.qty })),
+        deliveryMode: payload.delivery,
+        deliveryFee: customerDeliveryFee,
+        customerTotal,
       });
 
-      const sourceLotsByDeskItemId = new Map();
-      for (const lot of sourceLots) {
-        const rows = sourceLotsByDeskItemId.get(lot.deskItemId) || [];
-        rows.push({
-          id: lot.id,
-          remainingQty: lot.remainingQty,
-        });
-        sourceLotsByDeskItemId.set(lot.deskItemId, rows);
-      }
+      const uniqueDeskItemIds = [...new Set(resolvedLines.map((line) => line.deskItem.id))];
+
+      // Run 2 independent pre-transaction queries in parallel — saves a serial round-trip.
+      // NOTE: order-number sequencing is deliberately computed inside the $transaction below
+      // (at Serializable isolation) so concurrent creates can't both pick the same SO number.
+      const [priorAggResult, sourceLots] = await Promise.all([
+        req.role === UserRole.SALES
+          ? prisma.saleRecord.aggregate({
+              where: {
+                createdByUserId: req.user.id,
+                saleDate: { gte: monthStart, lt: monthEnd },
+              },
+              _sum: { quantity: true },
+            })
+          : Promise.resolve(null),
+        // Load available lots oldest-first for FIFO consumption; costPerUnit included for COGS.
+        prisma.inventoryLot.findMany({
+          where: {
+            deskItemId: { in: uniqueDeskItemIds },
+            remainingQty: { gt: 0 },
+          },
+          orderBy: [{ deskItemId: "asc" }, { createdAt: "asc" }],
+        }),
+      ]);
+
+      const initialPriorUnits = priorAggResult?._sum?.quantity ?? 0;
       const orderDeskPhotos = Array.from(new Set([...deskPhotos, ...resolvedLines.flatMap((line) => line.deskPhotos || [])]));
 
-      let savedRows = null;
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        const publicOrderNumber = await getNextLogicalOrderNumber(prisma, orderNumberPrefix);
-        try {
-          savedRows = await prisma.$transaction(async (tx) => {
+      // Per-attempt mutable state — cloned on each retry so a failed attempt's mutations don't leak.
+      let priorUnits;
+      let sourceLotsByDeskItemId;
+      let publicOrderNumber;
+
+      const runOrderTransaction = () =>
+        prisma.$transaction(async (tx) => {
+          // Compute order-number sequence INSIDE the tx so the COUNT+INSERT is serializable —
+          // this is what prevents two concurrent creates from picking the same SO-YYYYMM-NNNN.
+          const sequenceNext = await getNextLogicalOrderSequence(tx, monthStart, monthEnd);
+          publicOrderNumber = `SO-${year}${String(month).padStart(2, "0")}-${String(sequenceNext).padStart(4, "0")}`;
 
         const salesOrder = await tx.salesOrder.create({
           data: {
@@ -604,11 +631,15 @@ router.post(
             manualDiscount: payload.manualDisc || 0,
             manualDiscountReason: payload.manualReason || null,
             subtotal,
-            grandTotal: Math.max(0, subtotal - Number(payload.discount || 0) - Number(payload.manualDisc || 0) + Number(payload.wFee || 0)),
+            grandTotal: customerTotal,
             deliveryType: payload.delivery,
             deliveryRange,
             workerFee: payload.wFee || 0,
             workerFeeType: payload.wType || null,
+            workerLiftFee: payoutSummary.workerLiftFee,
+            workerDistanceFee: payoutSummary.workerDistanceFee,
+            employeePayout: payoutSummary.employeePayout,
+            ownerNet: payoutSummary.ownerNet,
             customerName: payload.addr || null,
             customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
             deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
@@ -627,68 +658,24 @@ router.post(
           const workerFee = feeShares[index] || 0;
           const lineSubtotal = line.baseAmount;
           const lineAmount = Math.max(0, lineSubtotal - promoDiscount - manualDiscount + workerFee);
-          const avgUnitCostSnapshot = avgCostByDeskItemId.get(line.deskItem.id) ?? 0;
-          const cogsTotal = avgUnitCostSnapshot * line.qty;
-          const grossProfit = lineAmount - workerFee - cogsTotal;
+          const workerLiftFee = lineLiftFees[index] || 0;
           const lineNumber = index + 1;
 
-          await tx.salesOrderLine.create({
-            data: {
-              salesOrderId: salesOrder.id,
-              lineNumber,
-              deskItemId: line.deskItem.id,
-              quantity: line.qty,
-              unitPrice: line.price,
-              promoDiscount,
-              manualDiscount,
-              amount: lineAmount,
-              deskPhotos: line.deskPhotos || [],
-              avgUnitCostSnapshot,
-              cogsTotal,
-              grossProfit,
-            },
-          });
-
-          const created = await tx.saleRecord.create({
-            data: {
-              ownerId: companyOwnerId,
-              saleDate,
-              orderNumber: buildLineOrderNumber(publicOrderNumber, lineNumber),
-              deskType: line.deskItem.id,
-              quantity: line.qty,
-              unitPrice: line.price,
-              promoDiscount,
-              manualDiscount,
-              manualDiscountReason: payload.manualReason || null,
-              status: payload.pay,
-              appliedPromotion: payload.promoId || null,
-              amount: lineAmount,
-              avgUnitCostSnapshot,
-              cogsTotal,
-              grossProfit,
-              deliveryType: payload.delivery,
-              deliveryRange,
-              workerFee,
-              workerFeeType: payload.wType || null,
-              customerName: payload.addr || null,
-              customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
-              deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
-              remarks: payload.note || null,
-              deskPhotos: line.deskPhotos || [],
-              paidAt: payload.pay === "paid" ? new Date() : null,
-              createdByUserId: req.user.id,
-              salesOrderId: salesOrder.id,
-            },
-            include: saleRecordFrontendInclude,
-          });
-
+          // Step 1: FIFO lot consumption — update remainingQty, create OUT movements, track each consumed lot.
           let remainingToConsume = line.qty;
           const sourceLotsForDeskItem = sourceLotsByDeskItemId.get(line.deskItem.id) || [];
+          const consumedLotEntries = [];
 
           for (const lot of sourceLotsForDeskItem) {
             if (remainingToConsume <= 0) break;
             const takeQty = Math.min(lot.remainingQty, remainingToConsume);
             if (takeQty <= 0) continue;
+
+            consumedLotEntries.push({
+              inventoryLotId: lot.id,
+              consumedQty: takeQty,
+              costPerUnitAtSale: lot.costPerUnit,
+            });
 
             await tx.inventoryLot.update({
               where: { id: lot.id },
@@ -711,6 +698,12 @@ router.post(
           }
 
           if (remainingToConsume > 0) {
+            // Unallocated — no lot to link; cost is unknown and cannot be recovered later.
+            consumedLotEntries.push({
+              inventoryLotId: null,
+              consumedQty: remainingToConsume,
+              costPerUnitAtSale: 0,
+            });
             await tx.inventoryMovement.create({
               data: {
                 deskItemId: line.deskItem.id,
@@ -723,6 +716,86 @@ router.post(
             });
           }
 
+          // Step 2: Compute true FIFO COGS from consumed lot costs.
+          const cogsTotal = consumedLotEntries.reduce(
+            (sum, e) => sum + e.consumedQty * e.costPerUnitAtSale,
+            0
+          );
+          const avgUnitCostSnapshot = line.qty > 0 ? Math.round(cogsTotal / line.qty) : 0;
+          const hasMissingCost = consumedLotEntries.some((e) => e.costPerUnitAtSale === 0);
+          const costStatus = hasMissingCost ? "pending_owner_review" : "confirmed";
+          const grossProfit = lineAmount - workerFee - cogsTotal;
+
+          // Step 3: Create SalesOrderLine — needs to exist before consumed-lot records (FK).
+          const orderLine = await tx.salesOrderLine.create({
+            data: {
+              salesOrderId: salesOrder.id,
+              lineNumber,
+              deskItemId: line.deskItem.id,
+              quantity: line.qty,
+              unitPrice: line.price,
+              promoDiscount,
+              manualDiscount,
+              amount: lineAmount,
+              deskPhotos: line.deskPhotos || [],
+              avgUnitCostSnapshot,
+              cogsTotal,
+              grossProfit,
+              costStatus,
+              workerLiftFee,
+            },
+          });
+
+          // Step 4: Create SaleRecord.
+          const created = await tx.saleRecord.create({
+            data: {
+              ownerId: companyOwnerId,
+              saleDate,
+              orderNumber: buildLineOrderNumber(publicOrderNumber, lineNumber),
+              deskType: line.deskItem.id,
+              quantity: line.qty,
+              unitPrice: line.price,
+              promoDiscount,
+              manualDiscount,
+              manualDiscountReason: payload.manualReason || null,
+              status: payload.pay,
+              appliedPromotion: payload.promoId || null,
+              amount: lineAmount,
+              avgUnitCostSnapshot,
+              cogsTotal,
+              grossProfit,
+              costStatus,
+              deliveryType: payload.delivery,
+              deliveryRange,
+              workerFee,
+              workerFeeType: payload.wType || null,
+              workerLiftFee,
+              customerName: payload.addr || null,
+              customerPhone: normalizeCustomerPhoneThai10(payload.customerPhone),
+              deliveryAddress: String(payload.deliveryAddress ?? "").trim() || null,
+              remarks: payload.note || null,
+              deskPhotos: line.deskPhotos || [],
+              paidAt: payload.pay === "paid" ? new Date() : null,
+              createdByUserId: req.user.id,
+              salesOrderId: salesOrder.id,
+            },
+            include: saleRecordFrontendInclude,
+          });
+
+          // Step 5: Persist consumed-lot records — enables owner to patch lot cost and auto-recalculate.
+          for (const entry of consumedLotEntries) {
+            await tx.salesOrderLineConsumedLot.create({
+              data: {
+                salesOrderLineId: orderLine.id,
+                saleRecordId: created.id,
+                inventoryLotId: entry.inventoryLotId,
+                consumedQty: entry.consumedQty,
+                costPerUnitAtSale: entry.costPerUnitAtSale,
+              },
+            });
+          }
+
+          // Step 6: Commission (SALES role only).
           if (req.role === UserRole.SALES) {
             const commBaht = commissionBahtForLine(priorUnits, line.qty);
             if (commBaht > 0) {
@@ -742,21 +815,42 @@ router.post(
         }
 
         return createdRows;
-          }, {
-            maxWait: 5000,
-            timeout: 15000,
+      }, {
+        maxWait: 5000,
+        timeout: 15000,
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+
+      // Retry loop guards against a P2002 collision on orderNumber if a concurrent transaction
+      // committed the same SO-YYYYMM-NNNN before our serialized check could see it.
+      const MAX_ATTEMPTS = 3;
+      let savedRows;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+        // Reset per-attempt mutable state — earlier attempts may have mutated lot.remainingQty / priorUnits in-memory.
+        priorUnits = initialPriorUnits;
+        sourceLotsByDeskItemId = new Map();
+        for (const lot of sourceLots) {
+          const rows = sourceLotsByDeskItemId.get(lot.deskItemId) || [];
+          rows.push({
+            id: lot.id,
+            remainingQty: lot.remainingQty,
+            costPerUnit: lot.costPerUnit,
           });
+          sourceLotsByDeskItemId.set(lot.deskItemId, rows);
+        }
+
+        try {
+          savedRows = await runOrderTransaction();
           break;
         } catch (error) {
-          if (attempt < 4 && isOrderNumberUniqueConstraint(error)) {
-            continue;
-          }
+          const target = Array.isArray(error?.meta?.target) ? error.meta.target : [];
+          const isOrderNumberCollision =
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002" &&
+            target.some((t) => String(t).toLowerCase().includes("ordernumber"));
+          if (isOrderNumberCollision && attempt < MAX_ATTEMPTS) continue;
           throw error;
         }
-      }
-
-      if (!savedRows) {
-        throw new Error("Failed to create sale order number");
       }
 
       const includeCost = req.role === UserRole.OWNER;
@@ -953,6 +1047,41 @@ router.delete(
     try {
       const { id } = req.params;
 
+      const order = await prisma.salesOrder.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          deliveryProofImage: true,
+          saleRecords: { select: { id: true }, take: 1 },
+        },
+      });
+
+      if (order) {
+        if (!order.deliveryProofImage) {
+          return res
+            .status(400)
+            .json({ error: "Cannot acknowledge delivery when no proof image exists" });
+        }
+
+        const acknowledgedAt = new Date();
+        await prisma.$transaction(async (tx) => {
+          await tx.salesOrder.update({
+            where: { id: order.id },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+          await tx.saleRecord.updateMany({
+            where: { salesOrderId: order.id },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+        });
+
+        res.json({
+          ok: true,
+          deliveryAcknowledgedAt: acknowledgedAt.toISOString(),
+        });
+        return;
+      }
+
       const group = await loadLogicalSaleGroup(prisma, id);
 
       if (!group) {
@@ -999,6 +1128,90 @@ router.delete(
 
       const includeCost = req.role === UserRole.OWNER;
       res.json(logicalSaleGroupToFrontend(updatedGroup, includeCost));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.patch(
+  "/:id/delivery-acknowledged",
+  authenticate,
+  requireOwner,
+  validate(paramsIdSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      const order = await prisma.salesOrder.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          deliveryProofImage: true,
+        },
+      });
+
+      if (order) {
+        if (!order.deliveryProofImage) {
+          return res
+            .status(400)
+            .json({ error: "Cannot acknowledge delivery when no proof image exists" });
+        }
+
+        const acknowledgedAt = new Date();
+        await prisma.$transaction(async (tx) => {
+          await tx.salesOrder.update({
+            where: { id: order.id },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+          await tx.saleRecord.updateMany({
+            where: { salesOrderId: order.id },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+        });
+
+        res.json({
+          ok: true,
+          deliveryAcknowledgedAt: acknowledgedAt.toISOString(),
+        });
+        return;
+      }
+
+      const group = await loadLogicalSaleGroup(prisma, id);
+
+      if (!group) {
+        return res.status(404).json({ error: "Sale not found" });
+      }
+
+      const currentProof =
+        group.rows[0]?.salesOrder?.deliveryProofImage || group.representative.deliveryProofImage;
+      if (!currentProof) {
+        return res
+          .status(400)
+          .json({ error: "Cannot acknowledge delivery when no proof image exists" });
+      }
+
+      const acknowledgedAt = new Date();
+      if (group.salesOrderId) {
+        await prisma.$transaction(async (tx) => {
+          await tx.salesOrder.update({
+            where: { id: group.salesOrderId },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+          await tx.saleRecord.updateMany({
+            where: { salesOrderId: group.salesOrderId },
+            data: { deliveryAcknowledgedAt: acknowledgedAt },
+          });
+        });
+      } else {
+        await prisma.saleRecord.update({
+          where: { id },
+          data: { deliveryAcknowledgedAt: acknowledgedAt },
+        });
+      }
+
+      const updatedGroup = await loadLogicalSaleGroup(prisma, id);
+      res.json(logicalSaleGroupToFrontend(updatedGroup, true));
     } catch (error) {
       next(error);
     }

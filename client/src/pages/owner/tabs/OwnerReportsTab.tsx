@@ -1,6 +1,285 @@
-import { RefreshCw } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, FileText, RefreshCw, SlidersHorizontal, X, XCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney } from "../../../data/constants";
+import { api } from "../../../lib/api";
+import type { Sale } from "../../../types";
 import { useOwnerDashboard } from "../ownerDashboardContext";
+
+const MONTH_ABBR = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+/** Must match `--rep-wheel-item-h` in owner-dashboard.css */
+const WHEEL_ITEM_PX = 44;
+
+const MONTH_CYCLE = 12;
+const MONTH_CANONICAL = MONTH_CYCLE * 3;
+const INFINITE_MONTHS = Array.from({ length: MONTH_CYCLE * 7 }, (_, i) => i % MONTH_CYCLE);
+
+function wheelScrollTopForIndex(idx: number) {
+  return idx * WHEEL_ITEM_PX;
+}
+function wheelCenterIndexFromScroll(scrollTop: number) {
+  return Math.round(scrollTop / WHEEL_ITEM_PX);
+}
+
+type MonthYearWheelProps = {
+  month: number;
+  year: number;
+  setMonth: (m: number) => void;
+  setYear: (y: number) => void;
+  selectableYears: number[];
+  filtersOpen: boolean;
+};
+
+function MonthYearWheel({ month, year, setMonth, setYear, selectableYears, filtersOpen }: MonthYearWheelProps) {
+  const monthColRef = useRef<HTMLDivElement>(null);
+  const yearColRef = useRef<HTMLDivElement>(null);
+  const [mCenterIdx, setMCenterIdx] = useState(MONTH_CANONICAL + month - 1);
+  const [yCenterIdx, setYCenterIdx] = useState(0);
+  const mTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const yTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mTeleport = useRef(false);
+  const yTeleport = useRef(false);
+
+  const yearLen = selectableYears.length;
+  const YEAR_COPIES = 7;
+  const infiniteYears = useMemo(
+    () =>
+      yearLen > 0
+        ? Array.from({ length: yearLen * YEAR_COPIES }, (_, i) => selectableYears[i % yearLen])
+        : [],
+    [selectableYears, yearLen]
+  );
+  const YEAR_CANONICAL = yearLen * 3;
+
+  function jumpToWheelIndex(strip: HTMLDivElement, idx: number) {
+    strip.scrollTop = wheelScrollTopForIndex(idx);
+  }
+
+  function teleportMonth(strip: HTMLDivElement, idx: number) {
+    mTeleport.current = true;
+    jumpToWheelIndex(strip, idx);
+    setMCenterIdx(idx);
+    setTimeout(() => {
+      mTeleport.current = false;
+    }, 60);
+  }
+
+  function teleportYear(strip: HTMLDivElement, idx: number) {
+    yTeleport.current = true;
+    jumpToWheelIndex(strip, idx);
+    setYCenterIdx(idx);
+    setTimeout(() => {
+      yTeleport.current = false;
+    }, 60);
+  }
+
+  useEffect(() => {
+    if (!filtersOpen || yearLen === 0) return;
+    requestAnimationFrame(() => {
+      const mc = monthColRef.current;
+      const yc = yearColRef.current;
+      if (mc) teleportMonth(mc, MONTH_CANONICAL + month - 1);
+      if (yc) {
+        const yi = Math.max(0, selectableYears.indexOf(year));
+        teleportYear(yc, YEAR_CANONICAL + yi);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snap wheels when filter panel opens
+  }, [filtersOpen]);
+
+  function handleMonthScroll() {
+    const el = monthColRef.current;
+    if (!el) return;
+    setMCenterIdx(wheelCenterIndexFromScroll(el.scrollTop));
+    if (mTeleport.current) return;
+    if (mTimer.current) clearTimeout(mTimer.current);
+    mTimer.current = setTimeout(() => {
+      const s = monthColRef.current;
+      if (!s) return;
+      const idx = wheelCenterIndexFromScroll(s.scrollTop);
+      const mZero = INFINITE_MONTHS[idx] ?? 0;
+      const canon = MONTH_CANONICAL + mZero;
+      teleportMonth(s, canon);
+      setMonth(mZero + 1);
+    }, 180);
+  }
+
+  function handleYearScroll() {
+    const el = yearColRef.current;
+    if (!el || yearLen === 0) return;
+    setYCenterIdx(wheelCenterIndexFromScroll(el.scrollTop));
+    if (yTeleport.current) return;
+    if (yTimer.current) clearTimeout(yTimer.current);
+    yTimer.current = setTimeout(() => {
+      const s = yearColRef.current;
+      if (!s) return;
+      const idx = wheelCenterIndexFromScroll(s.scrollTop);
+      const yVal = infiniteYears[idx];
+      if (yVal == null) return;
+      const yi = Math.max(0, selectableYears.indexOf(yVal));
+      teleportYear(s, YEAR_CANONICAL + yi);
+      setYear(yVal);
+    }, 180);
+  }
+
+  function cellOpacity(dist: number) {
+    if (dist === 0) return 1;
+    if (dist === 1) return 0.35;
+    return 0.1;
+  }
+
+  if (yearLen === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rep-date-wheel" role="group" aria-label="เลือกเดือนและปี">
+      <div className="rep-date-wheel__mask">
+        <div className="rep-date-wheel__highlight" aria-hidden />
+        <div className="rep-date-wheel__cols">
+          <div ref={monthColRef} className="rep-date-wheel__col" onScroll={handleMonthScroll}>
+            <div className="rep-date-wheel__inner">
+              {INFINITE_MONTHS.map((mi, i) => {
+                const d = Math.abs(i - mCenterIdx);
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    className={`rep-date-wheel__cell${d === 0 ? " rep-date-wheel__cell--active" : ""}`}
+                    style={{ opacity: cellOpacity(d), transition: "opacity 0.15s ease" }}
+                    onClick={() => monthColRef.current?.scrollTo({ top: wheelScrollTopForIndex(i), behavior: "smooth" })}
+                  >
+                    {MONTH_ABBR[mi]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div ref={yearColRef} className="rep-date-wheel__col" onScroll={handleYearScroll}>
+            <div className="rep-date-wheel__inner">
+              {infiniteYears.map((yy, i) => {
+                const d = Math.abs(i - yCenterIdx);
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    className={`rep-date-wheel__cell${d === 0 ? " rep-date-wheel__cell--active" : ""}`}
+                    style={{ opacity: cellOpacity(d), transition: "opacity 0.15s ease" }}
+                    onClick={() => yearColRef.current?.scrollTo({ top: wheelScrollTopForIndex(i), behavior: "smooth" })}
+                  >
+                    {yy}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PAY_LABELS: Record<string, string> = { all: "ทั้งหมด", paid: "ชำระแล้ว", pending: "ค้างชำระ", deposit: "มัดจำ" };
+const SORT_LABELS: Record<string, string> = { time: "เวลา", total: "ยอดรวม" };
+const DIR_LABELS: Record<string, string> = { desc: "ใหม่ก่อน", asc: "เก่าก่อน" };
+
+const PAY_OPTIONS = Object.entries(PAY_LABELS).map(([value, label]) => ({ value, label }));
+const SORT_OPTIONS = Object.entries(SORT_LABELS).map(([value, label]) => ({ value, label }));
+const DIR_OPTIONS = Object.entries(DIR_LABELS).map(([value, label]) => ({ value, label }));
+
+type RepFilterSelectProps = {
+  label: string;
+  ariaLabel: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+};
+
+function RepFilterSelect({ label, ariaLabel, value, options, onChange }: RepFilterSelectProps) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const current = options.find((o) => o.value === value)?.label ?? value;
+
+  return (
+    <div className="rep-ctrl-group" ref={rootRef}>
+      <span className="rep-ctrl-label">{label}</span>
+      <div className={`rep-dd${open ? " rep-dd--open" : ""}`}>
+        <button
+          type="button"
+          className="rep-dd-btn"
+          aria-label={ariaLabel}
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span className="rep-dd-btn__text">{current}</span>
+          <ChevronDown size={16} strokeWidth={2} className="rep-dd-btn__chev" aria-hidden />
+        </button>
+        {open ? (
+          <ul className="rep-dd-menu" role="listbox" aria-label={ariaLabel}>
+            {options.map((opt) => (
+              <li key={opt.value} role="none">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={opt.value === value}
+                  className={`rep-dd-item${opt.value === value ? " rep-dd-item--active" : ""}`}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                >
+                  {opt.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function useMinWidth(minWidth: number) {
+  const [matches, setMatches] = useState(() => (typeof window === "undefined" ? false : window.matchMedia(`(min-width: ${minWidth}px)`).matches));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const query = window.matchMedia(`(min-width: ${minWidth}px)`);
+    const onChange = (event: MediaQueryListEvent) => setMatches(event.matches);
+
+    setMatches(query.matches);
+    if (query.addEventListener) {
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    }
+
+    query.addListener(onChange);
+    return () => query.removeListener(onChange);
+  }, [minWidth]);
+
+  return matches;
+}
 
 export default function OwnerReportsTab() {
   const {
@@ -8,8 +287,6 @@ export default function OwnerReportsTab() {
     year,
     setMonth,
     setYear,
-    weekFilter,
-    setWeekFilter,
     payStatusFilter,
     setPayStatusFilter,
     sortBy,
@@ -21,10 +298,40 @@ export default function OwnerReportsTab() {
     selectableYears,
     loadPage,
     confirmSalePaid,
-    viewPaymentSlipAndMark,
-    removePaymentSlipByOwner,
     updatingSaleId
   } = useOwnerDashboard();
+
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const isDesktopReports = useMinWidth(900);
+  const [slipModalSale, setSlipModalSale] = useState<Sale | null>(null);
+
+  async function openSlipModal(sale: Sale): Promise<void> {
+    setSlipModalSale(sale);
+    try {
+      await api.markSaleSlipViewed(sale.id);
+      await loadPage();
+    } catch {
+      // marking viewed is best-effort
+    }
+  }
+
+  async function handleSlipModalConfirm(): Promise<void> {
+    if (!slipModalSale) return;
+    await confirmSalePaid(slipModalSale.id);
+    setSlipModalSale(null);
+  }
+
+  async function handleSlipModalReject(): Promise<void> {
+    if (!slipModalSale) return;
+    if (!window.confirm("ลบสลิปที่แนบไว้รายการนี้?")) return;
+    try {
+      await api.removeSalePaymentSlip(slipModalSale.id);
+      await loadPage();
+    } catch {
+      // ignore
+    }
+    setSlipModalSale(null);
+  }
 
   const batchMap = new Map<string, { total: number; paid: boolean }>();
   for (const sale of filteredAndSortedSales) {
@@ -44,96 +351,69 @@ export default function OwnerReportsTab() {
 
   return (
     <div className="owner-dash__panel">
-      <h2 className="owner-dash__h2">รายการขาย</h2>
+      <div className={`owner-dash__card owner-dash__card--muted rep-filters-card${filtersOpen ? "" : " rep-filters-card--collapsed"}`}>
+        {/* Collapsible header */}
+        <button
+          type="button"
+          className="rep-filters-toggle"
+          onClick={() => setFiltersOpen((o) => !o)}
+          aria-expanded={filtersOpen}
+        >
+          <SlidersHorizontal size={15} strokeWidth={2} aria-hidden />
+          <span>ตัวกรอง</span>
+          {filtersOpen
+            ? <ChevronUp size={15} strokeWidth={2} aria-hidden />
+            : <ChevronDown size={15} strokeWidth={2} aria-hidden />}
+        </button>
 
-      <button
-        type="button"
-        className="owner-dash__btn-primary owner-dash__btn-primary--fit"
-        style={{ marginBottom: 12 }}
-        onClick={() => void loadPage()}
-      >
-        <RefreshCw size={18} strokeWidth={2} aria-hidden />
-        โหลดรายการใหม่
-      </button>
+        {filtersOpen && (
+          <>
+            <MonthYearWheel
+              month={month}
+              year={year}
+              setMonth={setMonth}
+              setYear={setYear}
+              selectableYears={selectableYears}
+              filtersOpen={filtersOpen}
+            />
 
-      <div className="owner-dash__card owner-dash__card--muted">
-        <h3 className="owner-dash__h2" style={{ fontSize: 14 }}>
-          ช่วงเวลา
-        </h3>
-        <div className="owner-dash__filters owner-dash__filters--reports">
-          <div className="owner-dash__filter-group">
-            <label htmlFor="rep-month">เดือน</label>
-            <select id="rep-month" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="owner-dash__filter-group">
-            <label htmlFor="rep-year">ปี</label>
-            <select id="rep-year" value={year} onChange={(e) => setYear(Number(e.target.value))}>
-              {selectableYears.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="owner-dash__filter-group">
-            <label htmlFor="rep-week">สัปดาห์ของเดือน</label>
-            <select
-              id="rep-week"
-              value={weekFilter}
-              onChange={(e) => setWeekFilter(e.target.value as "all" | "1" | "2" | "3" | "4" | "5")}
-            >
-              <option value="all">ทั้งเดือน</option>
-              <option value="1">สัปดาห์ที่ 1</option>
-              <option value="2">สัปดาห์ที่ 2</option>
-              <option value="3">สัปดาห์ที่ 3</option>
-              <option value="4">สัปดาห์ที่ 4</option>
-              <option value="5">สัปดาห์ที่ 5</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="owner-dash__card owner-dash__card--muted" style={{ marginTop: 10 }}>
-        <h3 className="owner-dash__h2" style={{ fontSize: 14 }}>
-          ตัวกรองรายการ
-        </h3>
-        <div className="owner-dash__filters owner-dash__filters--reports">
-          <div className="owner-dash__filter-group">
-            <label htmlFor="rep-pay">สถานะการชำระ</label>
-            <select
-              id="rep-pay"
-              value={payStatusFilter}
-              onChange={(e) =>
-                setPayStatusFilter(e.target.value as "all" | "paid" | "pending" | "deposit")
-              }
-            >
-              <option value="all">ทั้งหมด</option>
-              <option value="paid">ชำระแล้ว</option>
-              <option value="pending">ค้างชำระ</option>
-              <option value="deposit">มัดจำ</option>
-            </select>
-          </div>
-          <div className="owner-dash__filter-group">
-            <label htmlFor="rep-sort">เรียงตาม</label>
-            <select id="rep-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value as "time" | "total")}>
-              <option value="time">เวลา</option>
-              <option value="total">ยอดรวม</option>
-            </select>
-          </div>
-          <div className="owner-dash__filter-group">
-            <label htmlFor="rep-dir">ทิศทาง</label>
-            <select id="rep-dir" value={sortDir} onChange={(e) => setSortDir(e.target.value as "asc" | "desc")}>
-              <option value="desc">ใหม่ → เก่า / มาก → น้อย</option>
-              <option value="asc">เก่า → ใหม่ / น้อย → มาก</option>
-            </select>
-          </div>
-        </div>
+            {/* Bottom controls row */}
+            <div className="rep-controls-row">
+              <RepFilterSelect
+                label="สถานะ"
+                ariaLabel="สถานะการชำระ"
+                value={payStatusFilter}
+                options={PAY_OPTIONS}
+                onChange={(v) => setPayStatusFilter(v as "all" | "paid" | "pending" | "deposit")}
+              />
+              <RepFilterSelect
+                label="เรียง"
+                ariaLabel="เรียงตาม"
+                value={sortBy}
+                options={SORT_OPTIONS}
+                onChange={(v) => setSortBy(v as "time" | "total")}
+              />
+              <RepFilterSelect
+                label="ทิศทาง"
+                ariaLabel="ทิศทางการเรียง"
+                value={sortDir}
+                options={DIR_OPTIONS}
+                onChange={(v) => setSortDir(v as "asc" | "desc")}
+              />
+              <div className="rep-ctrl-group rep-ctrl-group--refresh">
+                <span className="rep-ctrl-label">รีเฟรช</span>
+                <button
+                  type="button"
+                  className="rep-refresh-icon-btn"
+                  aria-label="โหลดรายการใหม่"
+                  onClick={() => void loadPage()}
+                >
+                  <RefreshCw size={18} strokeWidth={2} aria-hidden />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="owner-dash__card" style={{ marginTop: 10 }}>
@@ -152,133 +432,263 @@ export default function OwnerReportsTab() {
           <p style={{ margin: 0, textAlign: "center", color: "#636366" }}>ไม่มีรายการตามตัวกรอง</p>
         </div>
       ) : (
-        <div className="tbl-wrap" style={{ marginTop: 12 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>ออเดอร์</th>
-                <th>สินค้า</th>
-                <th>ชุด</th>
-                <th>ยอดรวม</th>
-                <th>ต้นทุนเฉลี่ย/ชิ้น</th>
-                <th>กำไรขาย</th>
-                <th>สถานะ</th>
-                <th>Batch</th>
-                <th>ผู้บันทึก</th>
-                <th>สลิป/ยืนยัน</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAndSortedSales.map((sale) => (
-                <tr key={sale.id}>
-                  <td>{sale.orderNumber}</td>
-                  <td>{sale.type}</td>
-                  <td>{sale.qty}</td>
-                  <td>{formatMoney(sale.grandTotal)}</td>
-                  <td className="csub" style={{ fontSize: 12 }}>
-                    {sale.avgUnitCost != null ? formatMoney(sale.avgUnitCost) : "—"}
-                  </td>
-                  <td className="csub" style={{ fontSize: 12 }}>
-                    {sale.grossProfit != null ? formatMoney(sale.grossProfit) : "—"}
-                  </td>
-                  <td>{sale.payStatus}</td>
-                  <td>
-                    {sale.paymentBatchNumber ? (
-                      <div>
-                        <div style={{ fontWeight: 600, color: "#1d4ed8" }}>{sale.paymentBatchNumber}</div>
-                        <div className="csub" style={{ fontSize: 11 }}>
-                          รวมบิล {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
+        <>
+          {!isDesktopReports ? (
+            <>
+              {/* ── Mobile: card list ── */}
+              <div className="rep-list">
+                {filteredAndSortedSales.map((sale) => {
+                  const slipBadgeClass = !sale.paymentSlipImage
+                    ? "rep-badge--no-slip"
+                    : sale.slipViewedAt
+                      ? "rep-badge--slip-seen"
+                      : "rep-badge--slip-unseen";
+                  const slipLabel = !sale.paymentSlipImage
+                    ? "ยังไม่มีสลิป"
+                    : sale.slipViewedAt
+                      ? "ดูสลิปแล้ว"
+                      : "ยังไม่ดูสลิป";
+                  const payLabel: Record<string, string> = {
+                    paid: "ชำระแล้ว",
+                    pending: "ค้างชำระ",
+                    deposit: "มัดจำ",
+                  };
+
+                  return (
+                    <div className="rep-card" key={sale.id}>
+                      <div className="rep-card__head">
+                        <div>
+                          <div className="rep-card__order">{sale.orderNumber}</div>
+                          <div className="rep-card__meta">
+                            {sale.type}
+                            {sale.qty != null ? ` × ${sale.qty}` : ""}
+                            {sale.recordedAt
+                              ? ` · ${new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
+                              : ""}
+                          </div>
                         </div>
+                        <div className="rep-card__total">{formatMoney(sale.ownerNet ?? sale.grandTotal)}</div>
                       </div>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td>
-                    <div>{sale.createdByName || sale.createdByUsername || "—"}</div>
-                    {sale.recordedAt ? (
-                      <div className="csub" style={{ fontSize: 11 }}>
-                        {new Date(sale.recordedAt).toLocaleString("th-TH", {
-                          dateStyle: "short",
-                          timeStyle: "short"
-                        })}
+
+                      <div className="rep-card__badges">
+                        <span className={`rep-badge rep-badge--${sale.payStatus}`}>
+                          {payLabel[sale.payStatus] ?? sale.payStatus}
+                        </span>
+                        <span className={`rep-badge ${slipBadgeClass}`}>{slipLabel}</span>
+                        {sale.paymentBatchNumber ? (
+                          <span className="rep-badge rep-badge--deposit">{sale.paymentBatchNumber}</span>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
+
+                      {sale.paymentBatchNumber ? (
+                        <div className="rep-card__batch-expected">
+                          ยอดรวม: {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
+                        </div>
+                      ) : null}
+
                       {sale.paymentSlipImage ? (
-                        <>
-                          <button
-                            type="button"
-                            className="btnok"
-                            style={{ padding: "8px 12px", fontSize: 13, minHeight: 44 }}
-                            onClick={() => {
-                              void viewPaymentSlipAndMark(sale.id, sale.paymentSlipImage!);
-                            }}
-                          >
-                            ดูสลิป
-                          </button>
-                          <button
-                            type="button"
-                            className="owner-dash__btn-danger"
-                            onClick={() => void removePaymentSlipByOwner(sale.id)}
-                            disabled={updatingSaleId === sale.id}
-                          >
-                            ลบสลิป
-                          </button>
-                        </>
-                      ) : (
-                        <span style={{ opacity: 0.7, fontSize: 13 }}>ไม่มีสลิป</span>
-                      )}
-                      <button
-                        type="button"
-                        className="btnok"
-                        style={{ padding: "8px 12px", fontSize: 13, minHeight: 44 }}
-                        disabled={
-                          sale.payStatus === "paid" ||
-                          !sale.paymentSlipImage ||
-                          !sale.slipViewedAt ||
-                          updatingSaleId === sale.id
-                        }
-                        onClick={() => void confirmSalePaid(sale.id)}
-                      >
-                        {sale.payStatus === "paid"
-                          ? "ชำระแล้ว"
-                          : updatingSaleId === sale.id
-                            ? "กำลังอัปเดต..."
-                            : "ยืนยันชำระ"}
-                      </button>
+                        <div className="rep-card__actions">
+                          {sale.slipViewedAt ? (
+                            <button
+                              type="button"
+                              className="sale-slip-link sale-slip-link--rep-card"
+                              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(46,125,50,0.12)", color: "#1b5e20" }}
+                              onClick={() => void openSlipModal(sale)}
+                            >
+                              <FileText size={14} strokeWidth={2} aria-hidden />
+                              ดูอีกครั้ง
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="sale-slip-link sale-slip-link--rep-card"
+                              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                              onClick={() => void openSlipModal(sale)}
+                            >
+                              <FileText size={14} strokeWidth={2} aria-hidden />
+                              ดูสลิป
+                            </button>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
-                    <div style={{ marginTop: 6, textAlign: "center" }}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          padding: "4px 10px",
-                          borderRadius: 8,
-                          background: !sale.paymentSlipImage
-                            ? "rgba(128,128,128,0.12)"
-                            : sale.slipViewedAt
-                              ? "rgba(46,125,50,0.14)"
-                              : "rgba(245,124,0,0.16)",
-                          color: !sale.paymentSlipImage ? "#666" : sale.slipViewedAt ? "#1b5e20" : "#b45309"
-                        }}
-                      >
-                        {!sale.paymentSlipImage
-                          ? "ยังไม่มีสลิป"
-                          : sale.slipViewedAt
-                            ? "ดูสลิปแล้ว"
-                            : "ยังไม่ดูสลิป"}
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+
+          {isDesktopReports ? (
+            <>
+              {/* ── Desktop: full table ── */}
+              <div className="rep-tbl">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ออเดอร์</th>
+                      <th>สินค้า</th>
+                      <th>ชุด</th>
+                      <th>เจ้าของได้</th>
+                      <th>ต้นทุน/ชิ้น</th>
+                      <th>กำไร</th>
+                      <th>สถานะ</th>
+                      <th>Batch</th>
+                      <th>ผู้บันทึก</th>
+                      <th>สลิป</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAndSortedSales.map((sale) => {
+                      const payLabel: Record<string, string> = { paid: "ชำระแล้ว", pending: "ค้างชำระ", deposit: "มัดจำ" };
+
+                      return (
+                        <tr key={sale.id}>
+                          <td>{sale.orderNumber}</td>
+                          <td>{sale.type}</td>
+                          <td>{sale.qty}</td>
+                          <td>{formatMoney(sale.ownerNet ?? sale.grandTotal)}</td>
+                          <td className="csub" style={{ fontSize: 12 }}>
+                            {sale.avgUnitCost != null ? formatMoney(sale.avgUnitCost) : "—"}
+                          </td>
+                          <td className="csub" style={{ fontSize: 12 }}>
+                            {sale.grossProfit != null ? formatMoney(sale.grossProfit) : "—"}
+                          </td>
+                          <td>
+                            <span className={`rep-badge rep-badge--${sale.payStatus}`}>
+                              {payLabel[sale.payStatus] ?? sale.payStatus}
+                            </span>
+                          </td>
+                          <td>
+                            {sale.paymentBatchNumber ? (
+                              <div>
+                                <div style={{ fontWeight: 600, color: "#1d4ed8" }}>{sale.paymentBatchNumber}</div>
+                                <div className="csub" style={{ fontSize: 11 }}>
+                                  {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
+                                </div>
+                              </div>
+                            ) : "—"}
+                          </td>
+                          <td>
+                            <div>{sale.createdByName || sale.createdByUsername || "—"}</div>
+                            {sale.recordedAt ? (
+                              <div className="csub" style={{ fontSize: 11 }}>
+                                {new Date(sale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            {!sale.paymentSlipImage ? (
+                              <span className="rep-badge rep-badge--no-slip">ยังไม่มีสลิป</span>
+                            ) : sale.slipViewedAt ? (
+                              <button
+                                type="button"
+                                className="sale-slip-link"
+                                style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(46,125,50,0.12)", color: "#1b5e20" }}
+                                onClick={() => void openSlipModal(sale)}
+                              >
+                                <FileText size={13} strokeWidth={2} aria-hidden />
+                                ดูอีกครั้ง
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="sale-slip-link"
+                                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                                onClick={() => void openSlipModal(sale)}
+                              >
+                                <FileText size={13} strokeWidth={2} aria-hidden />
+                                ดูสลิป
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
+
+          {slipModalSale?.paymentSlipImage ? (
+            <div
+              style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+              onClick={() => setSlipModalSale(null)}
+            >
+              <div
+                style={{ background: "#fff", borderRadius: 16, width: 440, maxWidth: "96vw", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", overflow: "hidden" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px", borderBottom: "1px solid #f0f0f0" }}>
+                  <FileText size={18} strokeWidth={2} color="#1d4ed8" aria-hidden />
+                  <span style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>สลิปการชำระเงิน</span>
+                  <button
+                    type="button"
+                    onClick={() => setSlipModalSale(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", padding: 4, display: "flex" }}
+                    aria-label="ปิด"
+                  >
+                    <X size={20} strokeWidth={2} />
+                  </button>
+                </div>
+
+                <div style={{ padding: "14px 16px 0" }}>
+                  <div style={{ background: "#f5f5f7", borderRadius: 12, padding: 12, display: "flex", justifyContent: "center", alignItems: "center", minHeight: 160 }}>
+                    <img
+                      src={slipModalSale.paymentSlipImage}
+                      alt="สลิปโอนเงิน"
+                      style={{ maxWidth: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 8 }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ padding: "12px 20px", fontSize: 13, color: "#334155", lineHeight: 1.9 }}>
+                  <div>ออเดอร์: <strong>{slipModalSale.orderNumber}</strong></div>
+                  <div>ยอด: <strong style={{ color: "#1b5e20" }}>{formatMoney(slipModalSale.ownerNet ?? slipModalSale.grandTotal)}</strong></div>
+                  {slipModalSale.recordedAt ? (
+                    <div>เวลา: {new Date(slipModalSale.recordedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</div>
+                  ) : null}
+                  {slipModalSale.paymentBatchNumber ? (
+                    <div>Batch: <strong style={{ color: "#1d4ed8" }}>{slipModalSale.paymentBatchNumber}</strong></div>
+                  ) : null}
+                </div>
+
+                <div style={{ display: "flex", gap: 8, padding: "0 16px 16px" }}>
+                  <button
+                    type="button"
+                    style={{
+                      flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      background: slipModalSale.payStatus === "paid" ? "#e2e8f0" : "#16a34a",
+                      color: slipModalSale.payStatus === "paid" ? "#64748b" : "#fff",
+                      border: "none", borderRadius: 10, padding: "11px 0", fontSize: 14, fontWeight: 700,
+                      cursor: slipModalSale.payStatus === "paid" ? "default" : "pointer",
+                      fontFamily: "inherit",
+                    }}
+                    disabled={slipModalSale.payStatus === "paid" || updatingSaleId === slipModalSale.id}
+                    onClick={() => void handleSlipModalConfirm()}
+                  >
+                    <CheckCircle2 size={16} strokeWidth={2.5} aria-hidden />
+                    {slipModalSale.payStatus === "paid" ? "ชำระแล้ว" : "ยืนยันชำระ"}
+                  </button>
+                  <button
+                    type="button"
+                    style={{
+                      flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      background: "#dc2626", color: "#fff",
+                      border: "none", borderRadius: 10, padding: "11px 0", fontSize: 14, fontWeight: 700,
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}
+                    disabled={updatingSaleId === slipModalSale.id}
+                    onClick={() => void handleSlipModalReject()}
+                  >
+                    <XCircle size={16} strokeWidth={2.5} aria-hidden />
+                    ปฏิเสธ
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

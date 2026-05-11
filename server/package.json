@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/prisma-cli.mjs generate && node --watch src/index.js",
+    "dev": "node scripts/prisma-cli.mjs generate && nodemon --legacy-watch --watch src --ext js,mjs,json --exec \"node src/index.js\"",
     "start": "node src/index.js",
     "build": "node -e \"console.log('server build step not required')\"",
     "postinstall": "node scripts/prisma-cli.mjs generate",

@@ -37,6 +37,8 @@ services:
     environment:
       PORT: 4001
       CLIENT_ORIGIN: http://localhost:${HOST_CLIENT_PORT:-5173}
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
     healthcheck:
       test:
         - CMD-SHELL
@@ -59,6 +61,8 @@ services:
       - root_node_modules:/app/node_modules
     environment:
       VITE_PROXY_TARGET: http://server:4001
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
     depends_on:
       server:
         condition: service_healthy

@@ -98,9 +98,20 @@ export function createApp() {
   // Error handler
   app.use((error, _req, res, _next) => {
     console.error(error);
+
     const statusCode = Number(error?.statusCode || error?.status || 500);
+
+    // body-parser and other middleware errors carry `error.type` (e.g.
+    // `entity.parse.failed`, `entity.too.large`). Their `error.message` is raw
+    // exception text — replace it with a generic message so we don't surface
+    // internals to the browser.
+    const isMiddlewareError = typeof error?.type === "string";
     const safeMessage =
-      statusCode >= 500 ? "Internal server error" : error?.message || "Request failed";
+      statusCode >= 500
+        ? "Internal server error"
+        : isMiddlewareError
+          ? "Bad request"
+          : error?.message || "Request failed";
 
     res.status(statusCode).json({ error: safeMessage });
   });

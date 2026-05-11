@@ -102,12 +102,31 @@ export function saleGroupToFrontendSale(group, options = {}) {
       : rows.reduce((sum, row) => sum + normalizedLineGrandTotal(row), 0);
   const totalCogs = rows.reduce((sum, row) => sum + Number(row.cogsTotal || 0), 0);
   const totalGrossProfit = rows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0);
+  const orderCostStatus = rows.some((row) => row.costStatus === "pending_owner_review")
+    ? "pending_owner_review"
+    : "confirmed";
   const deskPhotos = uniquePhotoUrls(
     order?.deskPhotos,
     ...rows.map((row) => row.deskPhotos),
     photoUrlsFromNote(order?.remarks),
     photoUrlsFromNote(first.remarks)
   );
+  const totalLineLiftFees = rows.reduce((sum, row) => sum + Number(row.workerLiftFee || 0), 0);
+  const headerWorkerLiftFee = order?.workerLiftFee != null ? Number(order.workerLiftFee || 0) : totalLineLiftFees;
+  const headerWorkerDistanceFee =
+    order?.workerDistanceFee != null
+      ? Number(order.workerDistanceFee || 0)
+      : (order?.deliveryType || first.deliveryType) === "delivery"
+        ? Number(order?.workerFee ?? first.workerFee ?? 0)
+        : 0;
+  const headerEmployeePayout =
+    order?.employeePayout != null
+      ? Number(order.employeePayout || 0)
+      : headerWorkerLiftFee + headerWorkerDistanceFee;
+  const headerOwnerNet =
+    order?.ownerNet != null
+      ? Number(order.ownerNet || 0)
+      : Math.max(0, Number(grandTotal || 0) - headerEmployeePayout);
 
   const base = {
     id: first.id,
@@ -137,12 +156,18 @@ export function saleGroupToFrontendSale(group, options = {}) {
     paymentBatchTotalAmount: first.paymentBatch?.totalAmount ?? null,
     items: lineItems,
     salesOrderId: order?.id || first.salesOrderId || null,
+    deliveryFee: headerWorkerDistanceFee,
+    workerLiftFee: headerWorkerLiftFee,
+    workerDistanceFee: headerWorkerDistanceFee,
+    employeePayout: headerEmployeePayout,
+    ownerNet: headerOwnerNet,
   };
 
   if (options.includeCost) {
     base.avgUnitCost = qty > 0 ? Math.round(totalCogs / qty) : 0;
     base.cogsTotal = totalCogs;
     base.grossProfit = totalGrossProfit;
+    base.costStatus = orderCostStatus;
   }
 
   return base;
@@ -174,37 +199,38 @@ export function saleRecordsToFrontendSales(saleRecords, options = {}) {
 
 export async function expandLogicalSaleIds(prisma, ids) {
   const uniqueIds = [...new Set(ids)];
-  const saleRecords = [];
-  const missingIds = [];
+  const includeClause = {
+    paymentBatch: true,
+    createdBy: { select: { id: true } },
+  };
 
-  for (const id of uniqueIds) {
-    const sale = await prisma.saleRecord.findUnique({
-      where: { id },
-      include: {
-        paymentBatch: true,
-        createdBy: { select: { id: true } },
-      },
+  // Single query instead of one findUnique per ID
+  const initialRecords = await prisma.saleRecord.findMany({
+    where: { id: { in: uniqueIds } },
+    include: includeClause,
+  });
+
+  const foundIds = new Set(initialRecords.map((r) => r.id));
+  const missingIds = uniqueIds.filter((id) => !foundIds.has(id));
+
+  const salesOrderIds = [
+    ...new Set(initialRecords.filter((r) => r.salesOrderId).map((r) => r.salesOrderId)),
+  ];
+
+  let allRecords;
+  if (salesOrderIds.length > 0) {
+    // Single query to expand all sales-order siblings at once
+    const groupedRows = await prisma.saleRecord.findMany({
+      where: { salesOrderId: { in: salesOrderIds } },
+      include: includeClause,
     });
-    if (sale) {
-      if (sale.salesOrderId) {
-        const groupedRows = await prisma.saleRecord.findMany({
-          where: { salesOrderId: sale.salesOrderId },
-          include: {
-            paymentBatch: true,
-            createdBy: { select: { id: true } },
-          },
-        });
-        saleRecords.push(...groupedRows);
-      } else {
-        saleRecords.push(sale);
-      }
-      continue;
-    }
-
-    missingIds.push(id);
+    const standaloneRecords = initialRecords.filter((r) => !r.salesOrderId);
+    allRecords = [...standaloneRecords, ...groupedRows];
+  } else {
+    allRecords = initialRecords;
   }
 
-  const dedupedRecords = Array.from(new Map(saleRecords.map((sale) => [sale.id, sale])).values());
+  const dedupedRecords = Array.from(new Map(allRecords.map((sale) => [sale.id, sale])).values());
   return {
     saleRecords: dedupedRecords,
     missingIds,

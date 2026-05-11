@@ -1,130 +1,400 @@
-import { RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  Banknote,
+  ClipboardList,
+  Coins,
+  CreditCard,
+  PackageCheck,
+  Percent,
+  RefreshCw,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { formatMoney } from "../../../data/constants";
+import { api } from "../../../lib/api";
+import type { Sale } from "../../../types";
 import { useOwnerDashboard } from "../ownerDashboardContext";
 
 function toNum(v: unknown): number {
-  if (v == null || v === "") {
-    return 0;
-  }
+  if (v == null || v === "") return 0;
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
+function deliveryFulfillmentLabel(sale: Sale): { label: string; cls: "gray" | "shipped" | "shipping" } {
+  if (sale.delivery === "selfpickup") {
+    return { label: "รับเอง", cls: "gray" };
+  }
+  if (sale.deliveryCompletedAt) {
+    return { label: "ส่งแล้ว", cls: "shipped" };
+  }
+  return { label: "กำลังส่ง", cls: "shipping" };
+}
+
+function profitCellContent(sale: Sale): { text: string; pending: boolean } {
+  if (sale.costStatus === "pending_owner_review") {
+    return { text: "รอกรอกทุน", pending: true };
+  }
+  if (sale.grossProfit != null) {
+    return { text: formatMoney(sale.grossProfit), pending: false };
+  }
+  if (sale.cogsTotal != null) {
+    return { text: formatMoney(sale.grandTotal - sale.cogsTotal), pending: false };
+  }
+  return { text: "—", pending: false };
+}
+
+type OwnerNetBlockProps = {
+  profit: number;
+  ownerNetIncome: number;
+  staffTotal: number;
+  variant: "mobile" | "desktop";
+};
+
+function OwnerNetIncomeCard({ profit, ownerNetIncome, staffTotal, variant }: OwnerNetBlockProps) {
+  return (
+    <div
+      className={`owner-dash__card ov-fin-card ov-fin-card--owner ov-fin-owner-dock ov-fin-owner-dock--${variant}`}
+      role="region"
+      aria-label={variant === "mobile" ? "รายได้สุทธิเจ้าของ (ภาพรวมเร็ว)" : "รายได้สุทธิเจ้าของ"}
+    >
+      <h3 className="ov-fin-card__title">
+        <Banknote size={18} strokeWidth={2} aria-hidden />
+        รายได้สุทธิเจ้าของ
+      </h3>
+      <p className="ov-fin-owner__hero">{formatMoney(ownerNetIncome)}</p>
+      <ul className="ov-fin-owner__breakdown">
+        <li>
+          <span>กำไรจากการขาย</span>
+          <span className="ov-fin-owner__pos">+{formatMoney(profit)}</span>
+        </li>
+        <li>
+          <span>ค่าแรงพนักงาน</span>
+          <span className="ov-fin-owner__neg">−{formatMoney(staffTotal)}</span>
+        </li>
+        <li className="ov-fin-owner__netline">
+          <span>รายได้สุทธิ</span>
+          <span className="ov-fin-owner__pos">{formatMoney(ownerNetIncome)}</span>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+const MONTH_NAMES = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
 export default function OwnerOverviewTab() {
-  const { dashboard, month, year, setMonth, setYear, selectableYears, loadPage, statusCount } = useOwnerDashboard();
+  const { dashboard, month, year, setMonth, setYear, selectableYears, loadPage, statusCount } =
+    useOwnerDashboard();
+
+  const [chartYear, setChartYear] = useState(year);
+  const [monthlyIncome, setMonthlyIncome] = useState<number[]>(() => Array(12).fill(0));
+  const [chartLoading, setChartLoading] = useState(true);
+
+  useEffect(() => {
+    setChartYear(year);
+  }, [year]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setChartLoading(true);
+    void api
+      .ownerMonthlyIncome(chartYear)
+      .then((res) => {
+        if (cancelled) return;
+        const arr = res.incomeByMonth;
+        if (Array.isArray(arr) && arr.length === 12) {
+          setMonthlyIncome(arr.map((n) => (Number.isFinite(Number(n)) ? Number(n) : 0)));
+        } else {
+          setMonthlyIncome(Array(12).fill(0));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMonthlyIncome(Array(12).fill(0));
+      })
+      .finally(() => {
+        if (!cancelled) setChartLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chartYear, dashboard]);
+
+  const sales = dashboard?.sales ?? [];
   const raw = dashboard?.summary;
   const summary = {
     income: toNum(raw?.income),
-    cost: toNum(raw?.cost),
     cogsFromSales: toNum(raw?.cogsFromSales),
     profit: toNum(raw?.profit),
     margin: toNum(raw?.margin),
+    pendingCostLineCount: toNum(raw?.pendingCostLineCount),
+    ownerNetIncome: toNum(raw?.ownerNetIncome),
+    staff: raw?.staffExpenses ?? {
+      salesCommission: 0,
+      liftingFees: 0,
+      deliveryWorkerFees: 0,
+      total: 0,
+    },
   };
-  const costPositions = dashboard?.costPositions ?? [];
+
+  const orderCount = sales.length;
+  const kpis = [
+    { label: "รายได้รวมเดือนนี้", value: formatMoney(summary.income), Icon: Wallet, tone: "green" },
+    { label: "ต้นทุนรวม (COGS)", value: formatMoney(summary.cogsFromSales), Icon: PackageCheck, tone: "gold" },
+    { label: "กำไรรวม", value: formatMoney(summary.profit), Icon: TrendingUp, tone: "green" },
+    { label: "Gross Margin", value: `${Number(summary.margin || 0).toFixed(1)}%`, Icon: Percent, tone: "blue" },
+    { label: "ออเดอร์เดือนนี้", value: String(orderCount), Icon: ClipboardList, tone: "green" },
+    {
+      label: "รอกรอกต้นทุน",
+      value: String(summary.pendingCostLineCount),
+      Icon: AlertTriangle,
+      tone: summary.pendingCostLineCount > 0 ? "warn" : "green",
+      sub: summary.pendingCostLineCount > 0 ? "ต้องดำเนินการ" : undefined,
+    },
+  ];
+
+  const totalStatusCount = statusCount.paid + statusCount.pending + statusCount.deposit;
+
+  const statusRows = [
+    { label: "ชำระแล้ว", value: statusCount.paid, cls: "paid" },
+    { label: "รอชำระ", value: statusCount.pending, cls: "pending" },
+    { label: "ค้างชำระ", value: statusCount.deposit, cls: "deposit" },
+  ];
+
+  const chartMax = Math.max(1, ...monthlyIncome);
+  const highlightMonth = chartYear === year ? month : null;
 
   return (
-    <div className="owner-dash__panel">
-      <h2 className="owner-dash__h2">ภาพรวมธุรกิจ</h2>
-
-      <div className="owner-dash__card owner-dash__card--muted">
-        <p style={{ margin: "0 0 12px", fontSize: 13, color: "#636366" }}>
-          ยอดขายด้านล่างใช้<strong> เดือน/ปีที่เลือก</strong> — ตัวเลขกล่องสรุปด้านล่างเป็น<strong> สะสมทั้งหมด</strong> (รายรับ − ต้นทุนสินค้า)
-        </p>
-        <div className="owner-dash__filters">
-          <div className="owner-dash__filter-group">
-            <label htmlFor="owner-ov-month">เดือน (กรองรายการขาย)</label>
-            <select
-              id="owner-ov-month"
-              value={month}
-              onChange={(e) => setMonth(Number(e.target.value))}
-            >
+    <div className="owner-dash__panel ov-panel">
+      <div className="ov-toolbar">
+        <h2 className="owner-dash__h2" style={{ margin: 0 }}>
+          Dashboard
+        </h2>
+        <div className="ov-toolbar__right">
+          <label className="ov-pill" htmlFor="ov-month">
+            <span>เดือน</span>
+            <select id="ov-month" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <option key={m} value={m}>
-                  {m}
+                  {MONTH_NAMES[m - 1]}
                 </option>
               ))}
             </select>
-          </div>
-          <div className="owner-dash__filter-group">
-            <label htmlFor="owner-ov-year">ปี</label>
-            <select id="owner-ov-year" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+          </label>
+          <label className="ov-pill" htmlFor="ov-year">
+            <span>ปี</span>
+            <select id="ov-year" value={year} onChange={(e) => setYear(Number(e.target.value))}>
               {selectableYears.map((y) => (
                 <option key={y} value={y}>
                   {y}
                 </option>
               ))}
             </select>
+          </label>
+          <button type="button" className="ov-refresh-btn" onClick={() => void loadPage()}>
+            <RefreshCw size={15} strokeWidth={2.5} aria-hidden />
+            รีเฟรช
+          </button>
+        </div>
+      </div>
+
+      <OwnerNetIncomeCard
+        variant="mobile"
+        profit={summary.profit}
+        ownerNetIncome={summary.ownerNetIncome}
+        staffTotal={summary.staff.total}
+      />
+
+      {/* KPI row — reference top strip */}
+      <div className="ov-kpi-row">
+        {kpis.map(({ label, value, Icon, tone, sub }) => (
+          <div className={`ov-kpi ov-kpi--${tone}`} key={label}>
+            <div className="ov-kpi__icon">
+              <Icon size={20} strokeWidth={2} aria-hidden />
+            </div>
+            <div className="ov-kpi__body">
+              <div className="ov-kpi__value">{value}</div>
+              <div className="ov-kpi__label">{label}</div>
+              {sub ? <div className="ov-kpi__sub">{sub}</div> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Chart + payment + pending lots — reference middle */}
+      <div className="ov-chart-layout">
+        <div className="owner-dash__card ov-chart-card">
+          <div className="ov-chart-head">
+            <h3 className="ov-card-title" style={{ marginBottom: 0 }}>
+              <TrendingUp size={16} strokeWidth={2.2} aria-hidden />
+              รายได้รายเดือน
+            </h3>
+            <label className="ov-pill" htmlFor="ov-chart-year">
+              <span>ปี</span>
+              <select id="ov-chart-year" value={chartYear} onChange={(e) => setChartYear(Number(e.target.value))}>
+                {selectableYears.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="ov-chart-sub">รวมยอดขาย (รายรับ) ตามเดือน — ข้อมูลจากฐานข้อมูลจริง</p>
+          {chartLoading ? (
+            <p className="ov-empty" style={{ margin: "24px 0" }}>
+              กำลังโหลดกราฟ…
+            </p>
+          ) : (
+            <div className="ov-chart-graph" role="img" aria-label="รายได้รายเดือน">
+              {monthlyIncome.map((amount, i) => {
+                const m = i + 1;
+                const pct = Math.round((amount / chartMax) * 100);
+                const isHighlight = highlightMonth === m;
+                return (
+                  <div className="ov-chart-col" key={m}>
+                    <div className="ov-chart-bar-shell" title={`${MONTH_NAMES[i]} ${chartYear}: ${formatMoney(amount)}`}>
+                      <div
+                        className={`ov-chart-bar ${isHighlight ? "ov-chart-bar--highlight" : ""}`}
+                        style={{ height: `${amount > 0 ? Math.max(pct, 6) : 0}%` }}
+                      />
+                    </div>
+                    <span className="ov-chart-mo">{MONTH_NAMES[i]}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="ov-chart-stack">
+          <div className="owner-dash__card ov-status-card">
+            <h3 className="ov-card-title">
+              <CreditCard size={16} strokeWidth={2.2} aria-hidden />
+              สถานะการชำระเงิน
+            </h3>
+            <div className="ov-status-list ov-status-list--rail">
+              {statusRows.map((row) => {
+                const fillWidthPct =
+                  totalStatusCount > 0 && row.value > 0 ? (100 * row.value) / totalStatusCount : 0;
+                return (
+                  <div className="ov-status-row ov-status-row--rail" key={row.label}>
+                    <span className="ov-status-row__rail-label">{row.label}</span>
+                    <div className="ov-status-track ov-status-track--rail">
+                      <span
+                        className={`ov-status-fill ov-status-fill--${row.cls}`}
+                        style={{ width: `${fillWidthPct}%` }}
+                      />
+                    </div>
+                    <strong className={`ov-status-row__rail-count ov-status-countStrong--${row.cls}`}>
+                      {row.value} รายการ
+                    </strong>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
 
-      <button type="button" className="owner-dash__btn-primary" onClick={() => void loadPage()}>
-        <RefreshCw size={18} strokeWidth={2} aria-hidden />
-        รีเฟรชข้อมูล
-      </button>
-
-      <p style={{ margin: "12px 0 0", fontSize: 13, color: "#636366" }}>
-        สรุปสะสม: ต้นทุนคิดจาก<strong> ค่าเฉลี่ยของราคาต้นทุนที่บันทึกตอนรับของเข้า</strong> (แต่ละครั้งรับของที่ใส่ราคา = 1 จุดใช้หาค่าเฉลี่ย) ไม่รวมค่าแรงหรือเงินเดือน
-      </p>
-
-      <div className="owner-dash__grid4" style={{ marginTop: 14 }}>
-        <div className="owner-dash__stat">
-          <label>รายรับสะสม</label>
-          <div className="val">{formatMoney(summary.income)}</div>
+      {/* Orders — full width under chart block */}
+      <div className="owner-dash__card ov-orders-card ov-orders-card--primary">
+        <div className="ov-orders-card__head">
+          <h3 className="ov-card-title ov-orders-card__title">
+            <ClipboardList size={16} strokeWidth={2.2} aria-hidden />
+            ออเดอร์ล่าสุด
+          </h3>
+          <Link to="/owner/reports" className="ov-see-all-btn ov-see-all-btn--blue">
+            ดูทั้งหมด
+          </Link>
         </div>
-        <div className="owner-dash__stat">
-          <label>ต้นทุนสินค้าสะสม</label>
-          <div className="val">{formatMoney(summary.cogsFromSales)}</div>
-        </div>
-        <div className="owner-dash__stat">
-          <label>กำไรขายสะสม</label>
-          <div className="val">{formatMoney(summary.profit)}</div>
-        </div>
-        <div className="owner-dash__stat">
-          <label>Margin</label>
-          <div className="val">{Number(summary.margin || 0).toFixed(1)}%</div>
-        </div>
+        {sales.length === 0 ? (
+          <p className="ov-empty">ยังไม่มีออเดอร์ในเดือนนี้</p>
+        ) : (
+          <div className="ov-orders-scroll">
+            <table className="ov-orders-tbl">
+              <thead>
+                <tr>
+                  <th>เลขที่</th>
+                  <th>ลูกค้า</th>
+                  <th>ยอด</th>
+                  <th>กำไร</th>
+                  <th>ประเภท</th>
+                  <th>สถานะชำระ</th>
+                  <th>สถานะจัดส่ง</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sales.map((sale) => {
+                  const payLabel =
+                    sale.payStatus === "paid" ? "ชำระแล้ว" : sale.payStatus === "deposit" ? "ค้างชำระ" : "รอชำระ";
+                  const payCls =
+                    sale.payStatus === "paid" ? "paid" : sale.payStatus === "deposit" ? "deposit" : "pending";
+                  const typeLabel = sale.delivery === "selfpickup" ? "รับเอง" : "จัดส่ง";
+                  const ship = deliveryFulfillmentLabel(sale);
+                  const pc = profitCellContent(sale);
+                  return (
+                    <tr key={sale.id}>
+                      <td className="ov-orders-tbl__num">{sale.orderNumber}</td>
+                      <td>{sale.customerName || "—"}</td>
+                      <td className="ov-orders-tbl__money">{formatMoney(sale.grandTotal)}</td>
+                      <td className={`ov-orders-tbl__profit ${pc.pending ? "ov-orders-tbl__profit--pending" : ""}`}>
+                        {pc.text}
+                      </td>
+                      <td>
+                        <span className={`ov-badge ov-badge--${sale.delivery === "selfpickup" ? "gray" : "blue"}`}>
+                          {typeLabel}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`ov-badge ov-badge--${payCls}`}>{payLabel}</span>
+                      </td>
+                      <td>
+                        <span className={`ov-badge ov-badge--${ship.cls}`}>{ship.label}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {costPositions.length > 0 ? (
-        <div className="owner-dash__card" style={{ marginTop: 12, overflowX: "auto" }}>
-          <h3 className="owner-dash__h2" style={{ fontSize: 14 }}>
-            ต้นทุนเฉลี่ยต่อชิ้น (จากการบันทึกรับของ)
+      <div className="ov-fin-bottom">
+        <div className="owner-dash__card ov-fin-card ov-fin-card--expenses">
+          <h3 className="ov-fin-card__title">
+            <Coins size={18} strokeWidth={2} aria-hidden />
+            ค่าใช้จ่ายพนักงาน (เดือนนี้)
           </h3>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e5ea" }}>
-                <th style={{ padding: "8px 6px" }}>สินค้า</th>
-                <th style={{ padding: "8px 6px" }}>คงคลัง</th>
-                <th style={{ padding: "8px 6px" }}>เฉลี่ย / ชิ้น</th>
-                <th style={{ padding: "8px 6px" }}>จำนวนครั้งที่มีต้นทุน</th>
-              </tr>
-            </thead>
-            <tbody>
-              {costPositions.map((row) => (
-                <tr key={row.deskItemId} style={{ borderBottom: "1px solid #f2f2f7" }}>
-                  <td style={{ padding: "8px 6px" }}>{row.name}</td>
-                  <td style={{ padding: "8px 6px" }}>{row.onHandQty}</td>
-                  <td style={{ padding: "8px 6px" }}>
-                    {row.avgUnitCost == null ? "—" : formatMoney(row.avgUnitCost)}
-                  </td>
-                  <td style={{ padding: "8px 6px" }}>{row.costSampleCount ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="ov-fin-lines">
+            <li>
+              <span>ค่าคอมมิชชันพนักงานขาย</span>
+              <span>{formatMoney(summary.staff.salesCommission)}</span>
+            </li>
+            <li>
+              <span>ค่ายกสินค้า</span>
+              <span>{formatMoney(summary.staff.liftingFees)}</span>
+            </li>
+            <li>
+              <span>ค่าส่งตามระยะทาง</span>
+              <span>{formatMoney(summary.staff.deliveryWorkerFees)}</span>
+            </li>
+            <li className="ov-fin-lines__total">
+              <span>รวม</span>
+              <span className="ov-fin-lines__total-amt">{formatMoney(summary.staff.total)}</span>
+            </li>
+          </ul>
         </div>
-      ) : null}
 
-      <div className="owner-dash__card" style={{ marginTop: 12 }}>
-        <h3 className="owner-dash__h2" style={{ fontSize: 14 }}>
-          สถานะการชำระ — เดือนที่เลือก ({month}/{year})
-        </h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 14, color: "#3a3a3c" }}>
-          <span>ชำระแล้ว {statusCount.paid}</span>
-          <span>ค้างชำระ {statusCount.pending}</span>
-          <span>มัดจำ {statusCount.deposit}</span>
-        </div>
+        <OwnerNetIncomeCard
+          variant="desktop"
+          profit={summary.profit}
+          ownerNetIncome={summary.ownerNetIncome}
+          staffTotal={summary.staff.total}
+        />
       </div>
     </div>
   );

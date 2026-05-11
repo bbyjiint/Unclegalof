@@ -77,6 +77,7 @@ export function saleRecordToSale(saleRecord, sequence = null, options = {}) {
     base.avgUnitCost = saleRecord.avgUnitCostSnapshot ?? 0;
     base.cogsTotal = saleRecord.cogsTotal ?? 0;
     base.grossProfit = saleRecord.grossProfit ?? 0;
+    base.costStatus = saleRecord.costStatus ?? "confirmed";
   }
 
   return base;

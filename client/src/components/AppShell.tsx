@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Armchair, ClipboardList, Package, Shield, Truck, Wrench } from "lucide-react";
+import { Armchair, ClipboardList, LogOut, Package, Shield, Truck, Wrench } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import { canAccessRoute } from "../lib/roleRoutes";
@@ -32,47 +32,50 @@ export default function AppShell({ children }: PropsWithChildren) {
       <header className="header">
         <div className="hlogo">
           <div className="ico" aria-hidden>
-            <Armchair size={24} strokeWidth={2} />
+            <Armchair size={20} strokeWidth={2} />
           </div>
           <div>
             <h1>โต๊ะลพบุรี</h1>
           </div>
         </div>
-        <nav className="vtoggle">
-          {user ? (
-            <>
-              {visibleNavItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to !== "/owner"}
-                  className={({ isActive }) => `vbtn${isActive ? " active" : ""}`}
-                >
-                  <span className="nav-link-inner">
-                    <item.Icon size={18} strokeWidth={2} />
-                    {item.label}
-                  </span>
-                </NavLink>
-              ))}
-              <button type="button" className="vbtn vbtn-signout" onClick={logout}>
-                ออกจากระบบ
-              </button>
-            </>
-          ) : (
-            <>
-              <NavLink to="/login" className={({ isActive }) => `vbtn${isActive ? " active" : ""}`}>
-                เข้าสู่ระบบ
-              </NavLink>
-              <NavLink to="/signup" className={({ isActive }) => `vbtn${isActive ? " active" : ""}`}>
-                เปิดบัญชี
-              </NavLink>
-            </>
-          )}
-        </nav>
+        {user ? (
+          <button type="button" className="header-logout-btn" onClick={logout}>
+            <LogOut size={15} strokeWidth={2} aria-hidden />
+            ออกจากระบบ
+          </button>
+        ) : (
+          <nav className="header-auth-nav">
+            <NavLink to="/login" className={({ isActive }) => `vbtn${isActive ? " active" : ""}`}>
+              เข้าสู่ระบบ
+            </NavLink>
+            <NavLink to="/signup" className={({ isActive }) => `vbtn${isActive ? " active" : ""}`}>
+              เปิดบัญชี
+            </NavLink>
+          </nav>
+        )}
       </header>
-      <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "0 16px" }}>
+
+      <div className="app-body">
         {children}
       </div>
+
+      {user ? (
+        <nav className="bottom-nav" aria-label="การนำทางหลัก">
+          {visibleNavItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to !== "/owner"}
+              className={({ isActive }) => `bottom-nav__item${isActive ? " active" : ""}`}
+            >
+              <span className="bottom-nav__pill">
+                <item.Icon size={20} strokeWidth={2} aria-hidden />
+              </span>
+              <span className="bottom-nav__label">{item.label}</span>
+            </NavLink>
+          ))}
+        </nav>
+      ) : null}
     </>
   );
 }
