@@ -1004,6 +1004,17 @@ div.h-with-icon {
     linear-gradient(168deg, #0f1f16 0%, var(--dark) 38%, #1a4a32 92%);
 }
 
+.auth-hero.auth-hero--lock-viewport {
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .auth-hero-decor {
   position: absolute;
   inset: 0;
@@ -3888,8 +3899,17 @@ th {
       max(28px, env(safe-area-inset-bottom, 0px) + 12px);
   }
 
+  .auth-hero.auth-hero--lock-viewport {
+    padding: max(16px, env(safe-area-inset-top, 0px) + 8px) 16px
+      max(20px, env(safe-area-inset-bottom, 0px) + 8px);
+  }
+
   .auth-hero-brand {
     margin-bottom: 26px;
+  }
+
+  .auth-hero.auth-hero--lock-viewport .auth-hero-brand {
+    margin-bottom: 20px;
   }
 
   /* —— Staff page / รายการขาย (mobile) —— */

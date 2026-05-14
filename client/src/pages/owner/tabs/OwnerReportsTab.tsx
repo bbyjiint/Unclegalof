@@ -305,6 +305,29 @@ export default function OwnerReportsTab() {
   const isDesktopReports = useMinWidth(900);
   const [slipModalSale, setSlipModalSale] = useState<Sale | null>(null);
 
+  /** Sum of `ownerNet ?? grandTotal` per payment batch in the current list (combined owner net). */
+  const batchPaymentAggregates = useMemo(() => {
+    const combinedOwnerNetByBatchId = new Map<string, number>();
+    const batchHasNonPaid = new Set<string>();
+    for (const s of filteredAndSortedSales) {
+      if (!s.paymentBatchId) continue;
+      const line = Number(s.ownerNet ?? s.grandTotal ?? 0);
+      combinedOwnerNetByBatchId.set(
+        s.paymentBatchId,
+        (combinedOwnerNetByBatchId.get(s.paymentBatchId) ?? 0) + line
+      );
+      if (s.payStatus !== "paid") batchHasNonPaid.add(s.paymentBatchId);
+    }
+    return { combinedOwnerNetByBatchId, batchHasNonPaid };
+  }, [filteredAndSortedSales]);
+
+  function displayCombinedBatchTotal(sale: Sale): number {
+    if (!sale.paymentBatchId) return 0;
+    const summed = batchPaymentAggregates.combinedOwnerNetByBatchId.get(sale.paymentBatchId) ?? 0;
+    const stored = Number(sale.paymentBatchTotalAmount || 0);
+    return summed > 0 ? summed : stored;
+  }
+
   async function openSlipModal(sale: Sale): Promise<void> {
     setSlipModalSale(sale);
     try {
@@ -337,9 +360,11 @@ export default function OwnerReportsTab() {
   for (const sale of filteredAndSortedSales) {
     if (!sale.paymentBatchId) continue;
     if (!batchMap.has(sale.paymentBatchId)) {
+      const summed = batchPaymentAggregates.combinedOwnerNetByBatchId.get(sale.paymentBatchId) ?? 0;
+      const stored = Number(sale.paymentBatchTotalAmount || 0);
       batchMap.set(sale.paymentBatchId, {
-        total: Number(sale.paymentBatchTotalAmount || 0),
-        paid: sale.payStatus === "paid",
+        total: summed > 0 ? summed : stored,
+        paid: !batchPaymentAggregates.batchHasNonPaid.has(sale.paymentBatchId),
       });
     }
   }
@@ -482,7 +507,7 @@ export default function OwnerReportsTab() {
 
                       {sale.paymentBatchNumber ? (
                         <div className="rep-card__batch-expected">
-                          ยอดรวม: {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
+                          ยอดรวม: {formatMoney(displayCombinedBatchTotal(sale))}
                         </div>
                       ) : null}
 
@@ -563,7 +588,7 @@ export default function OwnerReportsTab() {
                               <div>
                                 <div style={{ fontWeight: 600, color: "#1d4ed8" }}>{sale.paymentBatchNumber}</div>
                                 <div className="csub" style={{ fontSize: 11 }}>
-                                  {formatMoney(Number(sale.paymentBatchTotalAmount || 0))}
+                                  {formatMoney(displayCombinedBatchTotal(sale))}
                                 </div>
                               </div>
                             ) : "—"}

@@ -2,11 +2,13 @@ import type { PropsWithChildren } from "react";
 
 type AuthHeroShellProps = PropsWithChildren<{
   wide?: boolean;
+  /** Pin to one viewport height and disable scroll (e.g. compact login on mobile). */
+  lockViewport?: boolean;
 }>;
 
-export function AuthHeroShell({ wide, children }: AuthHeroShellProps) {
+export function AuthHeroShell({ wide, lockViewport, children }: AuthHeroShellProps) {
   return (
-    <main className="auth-hero">
+    <main className={`auth-hero${lockViewport ? " auth-hero--lock-viewport" : ""}`}>
       <div className="auth-hero-decor" aria-hidden>
         <svg
           className="auth-hero-waves"

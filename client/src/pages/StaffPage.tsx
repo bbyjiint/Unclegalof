@@ -681,13 +681,13 @@ export default function StaffPage() {
         saleIds: selectedBatchSaleIds,
         fileUrl,
       });
+      setSelectedBatchSaleIds([]);
+      await loadPage();
       alert(
         `สร้างสลิปรวมสำเร็จ\nBatch: ${response.batch.batchNumber}\nรวม ${formatMoney(
           response.batch.totalAmount
         )}\nจำนวน ${response.batch.saleCount} ออเดอร์`
       );
-      setSelectedBatchSaleIds([]);
-      await loadPage();
     } catch (error) {
       console.error("Failed to create batch payment:", error);
       alert(error instanceof Error ? error.message : "Failed to create batch payment");

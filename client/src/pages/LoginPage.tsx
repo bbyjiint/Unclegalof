@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../components/AuthProvider";
 import { AuthHeroShell } from "../components/auth/AuthHeroShell";
@@ -13,6 +13,18 @@ export default function LoginPage() {
 
   const navigate = useNavigate();
   const { login } = useAuth();
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    html.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -35,7 +47,7 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthHeroShell>
+    <AuthHeroShell lockViewport>
       <p className="auth-hero-brand">โต๊ะลพบุรี</p>
 
       <h1 className="sr-only">เข้าสู่ระบบ</h1>

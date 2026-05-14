@@ -206,6 +206,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: mergedHeaders,
+    cache: "no-store",
   });
 
   if (!response.ok) {

@@ -51,6 +51,7 @@ export default function DeliveryOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [proofState, setProofState] = useState<ProofState | null>(null);
+  const confirmingRef = useRef(false);
   const [lineGroupNotice, setLineGroupNotice] = useState(false);
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const lineReminderOkRef = useRef<HTMLButtonElement>(null);
@@ -97,11 +98,13 @@ export default function DeliveryOrdersPage() {
   }
 
   async function handleConfirmDelivery(): Promise<void> {
+    if (confirmingRef.current) return;
     if (!proofState?.file) {
       setProofState((prev) => prev ? { ...prev, warnNoPhoto: true } : prev);
       return;
     }
     const { orderId, file } = proofState;
+    confirmingRef.current = true;
     setProofState((prev) => prev ? { ...prev, uploading: true } : prev);
     setCompletingId(orderId);
     try {
@@ -115,6 +118,7 @@ export default function DeliveryOrdersPage() {
       alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
       setProofState((prev) => prev ? { ...prev, uploading: false } : prev);
     } finally {
+      confirmingRef.current = false;
       setCompletingId(null);
     }
   }
@@ -331,7 +335,6 @@ export default function DeliveryOrdersPage() {
               ref={proofFileInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               style={{ display: "none" }}
               onChange={handleProofFileChange}
             />
