@@ -727,30 +727,37 @@ router.patch(
 
       const prevCost = lot.costPerUnit;
 
-      const updated = await prisma.$transaction(async (tx) => {
-        const row = await tx.inventoryLot.update({
-          where: { id },
-          data: { costPerUnit },
-          include: { deskItem: true },
-        });
-
-        // Maintain DeskItemCostLog for display/reporting (average cost overview).
-        if (prevCost === 0 && costPerUnit > 0) {
-          await tx.deskItemCostLog.create({
-            data: {
-              deskItemId: lot.deskItemId,
-              costPerUnit,
-            },
+      // Interactive tx default timeout is 5s. Retroactive COGS can touch many sale lines
+      // (especially on serverless + remote Postgres), which previously hit P2028
+      // ("Transaction not found" / timed-out interactive transaction).
+      const updated = await prisma.$transaction(
+        async (tx) => {
+          const row = await tx.inventoryLot.update({
+            where: { id },
+            data: { costPerUnit },
+            include: { deskItem: true },
           });
-        }
 
-        // Retroactively recalculate COGS for every sale line that consumed this lot.
-        const consumedRecords = await tx.salesOrderLineConsumedLot.findMany({
-          where: { inventoryLotId: id },
-          select: { salesOrderLineId: true, saleRecordId: true },
-        });
+          // Maintain DeskItemCostLog for display/reporting (average cost overview).
+          if (prevCost === 0 && costPerUnit > 0) {
+            await tx.deskItemCostLog.create({
+              data: {
+                deskItemId: lot.deskItemId,
+                costPerUnit,
+              },
+            });
+          }
 
-        if (consumedRecords.length > 0) {
+          // Retroactively recalculate COGS for every sale line that consumed this lot.
+          const consumedRecords = await tx.salesOrderLineConsumedLot.findMany({
+            where: { inventoryLotId: id },
+            select: { salesOrderLineId: true, saleRecordId: true },
+          });
+
+          if (consumedRecords.length === 0) {
+            return row;
+          }
+
           // Propagate the new cost to all consumed-lot snapshots referencing this lot.
           await tx.salesOrderLineConsumedLot.updateMany({
             where: { inventoryLotId: id },
@@ -758,16 +765,35 @@ router.patch(
           });
 
           const uniqueLineIds = [...new Set(consumedRecords.map((r) => r.salesOrderLineId))];
+          const lineIdToSaleRecordId = new Map();
+          for (const r of consumedRecords) {
+            if (!lineIdToSaleRecordId.has(r.salesOrderLineId)) {
+              lineIdToSaleRecordId.set(r.salesOrderLineId, r.saleRecordId);
+            }
+          }
+
+          // Bulk-fetch once instead of N+1 findUnique/findMany per line (was the main
+          // reason this interactive transaction exceeded the default 5s timeout).
+          const [orderLines, allConsumedLots] = await Promise.all([
+            tx.salesOrderLine.findMany({ where: { id: { in: uniqueLineIds } } }),
+            tx.salesOrderLineConsumedLot.findMany({
+              where: { salesOrderLineId: { in: uniqueLineIds } },
+            }),
+          ]);
+
+          const orderLineById = new Map(orderLines.map((ol) => [ol.id, ol]));
+          const consumedByLineId = new Map();
+          for (const cl of allConsumedLots) {
+            const list = consumedByLineId.get(cl.salesOrderLineId);
+            if (list) list.push(cl);
+            else consumedByLineId.set(cl.salesOrderLineId, [cl]);
+          }
 
           for (const lineId of uniqueLineIds) {
-            const [orderLine, allConsumedForLine] = await Promise.all([
-              tx.salesOrderLine.findUnique({ where: { id: lineId } }),
-              tx.salesOrderLineConsumedLot.findMany({ where: { salesOrderLineId: lineId } }),
-            ]);
-
+            const orderLine = orderLineById.get(lineId);
             if (!orderLine) continue;
 
-            // Recompute COGS from all consumed lots for this line (costPerUnitAtSale already updated above).
+            const allConsumedForLine = consumedByLineId.get(lineId) || [];
             const newCogsTotal = allConsumedForLine.reduce(
               (sum, cl) => sum + cl.consumedQty * cl.costPerUnitAtSale,
               0
@@ -776,41 +802,39 @@ router.patch(
               orderLine.quantity > 0 ? Math.round(newCogsTotal / orderLine.quantity) : 0;
             const stillPending = allConsumedForLine.some((cl) => cl.costPerUnitAtSale === 0);
             const newCostStatus = stillPending ? "pending_owner_review" : "confirmed";
-            // grossProfit = (unitPrice × qty − discounts) − COGS
             const baseRevenue =
               orderLine.unitPrice * orderLine.quantity -
               orderLine.promoDiscount -
               orderLine.manualDiscount;
             const newGrossProfit = baseRevenue - newCogsTotal;
+            const costPatch = {
+              cogsTotal: newCogsTotal,
+              avgUnitCostSnapshot: newAvgUnitCost,
+              grossProfit: newGrossProfit,
+              costStatus: newCostStatus,
+            };
 
             await tx.salesOrderLine.update({
               where: { id: lineId },
-              data: {
-                cogsTotal: newCogsTotal,
-                avgUnitCostSnapshot: newAvgUnitCost,
-                grossProfit: newGrossProfit,
-                costStatus: newCostStatus,
-              },
+              data: costPatch,
             });
 
-            // Mirror update on the corresponding SaleRecord.
-            const saleRecordId = consumedRecords.find((r) => r.salesOrderLineId === lineId)?.saleRecordId;
+            const saleRecordId = lineIdToSaleRecordId.get(lineId);
             if (saleRecordId) {
               await tx.saleRecord.update({
                 where: { id: saleRecordId },
-                data: {
-                  cogsTotal: newCogsTotal,
-                  avgUnitCostSnapshot: newAvgUnitCost,
-                  grossProfit: newGrossProfit,
-                  costStatus: newCostStatus,
-                },
+                data: costPatch,
               });
             }
           }
-        }
 
-        return row;
-      });
+          return row;
+        },
+        {
+          maxWait: 15_000,
+          timeout: 60_000,
+        }
+      );
 
       res.json({
         item: lotToFrontend(updated, true),
